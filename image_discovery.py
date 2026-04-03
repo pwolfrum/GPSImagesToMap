@@ -73,11 +73,11 @@ def read_image_info(path: Path) -> ImageInfo:
     timestamp = None
     has_gps = False
 
-    # Check main IFD tags
-    for tag_id, value in exif_data.items():
-        tag = TAGS.get(tag_id, tag_id)
-        if tag == "GPSInfo":
-            has_gps = True
+    # Check GPS IFD for actual coordinate data (not just a version tag)
+    gps_ifd = exif_data.get_ifd(0x8825)  # GPS IFD pointer
+    if gps_ifd:
+        # GPSLatitude = 2, GPSLongitude = 4 — require actual coordinates
+        has_gps = 2 in gps_ifd and 4 in gps_ifd
 
     # Check EXIF sub-IFD for DateTimeOriginal / DateTimeDigitized
     exif_ifd = exif_data.get_ifd(0x8769)  # EXIF IFD pointer
@@ -100,11 +100,6 @@ def read_image_info(path: Path) -> ImageInfo:
             if tag == "DateTime":
                 timestamp = _parse_exif_datetime(str(value), tz_offset)
                 break
-
-    # Also check GPS IFD
-    gps_ifd = exif_data.get_ifd(0x8825)  # GPS IFD pointer
-    if gps_ifd:
-        has_gps = True
 
     tz_certain = tz_offset is not None and timestamp is not None
     return ImageInfo(
