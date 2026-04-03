@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>{{TITLE}}</title>
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.140/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.140/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; overflow: hidden; font-family: sans-serif; }
+        #cesiumContainer { width: 100%; height: 100%; }
+
+        #imagePanel {
+            display: none;
+            position: absolute;
+            top: 40px;
+            right: 20px;
+            background: rgba(20, 20, 30, 0.92);
+            border: 1px solid #555;
+            border-radius: 8px;
+            padding: 12px;
+            max-width: 720px;
+            max-height: calc(100vh - 80px);
+            z-index: 1000;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+            resize: both;
+            overflow: auto;
+        }
+        #imagePanel img {
+            max-width: 100%;
+            max-height: calc(100vh - 180px);
+            border-radius: 4px;
+            display: block;
+        }
+        #imagePanel .panel-toolbar {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+        #imagePanel .panel-toolbar button {
+            color: #ccc;
+            font-size: 16px;
+            cursor: pointer;
+            background: none;
+            border: none;
+            line-height: 1;
+            padding: 2px 6px;
+        }
+        #imagePanel .panel-toolbar button:hover { color: #fff; }
+        #imagePanel .img-label {
+            color: #ccc;
+            font-size: 12px;
+            margin-top: 6px;
+            text-align: center;
+        }
+
+        #imagePanel.fullscreen {
+            top: 0; right: 0;
+            max-width: 100vw;
+            max-height: 100vh;
+            width: 100vw;
+            height: 100vh;
+            border-radius: 0;
+            resize: none;
+        }
+        #imagePanel.fullscreen img {
+            max-width: calc(100vw - 40px);
+            max-height: calc(100vh - 80px);
+            margin: 0 auto;
+        }
+
+        #legend {
+            position: absolute;
+            bottom: 40px;
+            left: 20px;
+            background: rgba(20, 20, 30, 0.85);
+            color: #ddd;
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            z-index: 500;
+        }
+        #legend .track-item { margin-bottom: 4px; }
+        #legend .dot {
+            display: inline-block;
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            margin-right: 6px;
+            vertical-align: middle;
+        }
+    </style>
+</head>
+<body>
+    <div id="cesiumContainer"></div>
+
+    <div id="imagePanel">
+        <div class="panel-toolbar">
+            <button onclick="toggleFullscreen()" title="Toggle fullscreen">⛶</button>
+            <button onclick="closeImagePanel()" title="Close">&times;</button>
+        </div>
+        <img id="panelImage" src="" alt="">
+        <div class="img-label" id="panelLabel"></div>
+    </div>
+
+    <div id="legend"></div>
+
+    <script>
+        // --- Inline data (embedded at export time) ---
+        const CESIUM_TOKEN = '{{CESIUM_TOKEN}}';
+        const TRACKS = {{TRACKS_JSON}};
+        const IMAGES = {{IMAGES_JSON}};
+
+        const TRACK_COLORS = [
+            Cesium.Color.DODGERBLUE,
+            Cesium.Color.ORANGERED,
+            Cesium.Color.LIMEGREEN,
+            Cesium.Color.GOLD,
+            Cesium.Color.MAGENTA,
+            Cesium.Color.CYAN,
+        ];
+
+        // --- Init Cesium ---
+        if (CESIUM_TOKEN) {
+            Cesium.Ion.defaultAccessToken = CESIUM_TOKEN;
+        }
+
+        const viewerOptions = {
+            animation: false,
+            timeline: false,
+            geocoder: false,
+            homeButton: true,
+            sceneModePicker: true,
+            baseLayerPicker: false,
+            navigationHelpButton: false,
+            fullscreenButton: true,
+            infoBox: false,
+            selectionIndicator: false,
+        };
+
+        if (CESIUM_TOKEN) {
+            viewerOptions.terrain = Cesium.Terrain.fromWorldTerrain();
+        }
+
+        const viewer = new Cesium.Viewer('cesiumContainer', viewerOptions);
+        viewer.scene.globe.enableLighting = false;
+
+        // --- Render data ---
+        function loadData() {
+            const legendEl = document.getElementById('legend');
+            let legendHtml = '';
+
+            TRACKS.forEach((track, i) => {
+                const color = TRACK_COLORS[i % TRACK_COLORS.length];
+                const positions = [];
+                for (const pt of track.points) {
+                    positions.push(Cesium.Cartesian3.fromDegrees(pt.lon, pt.lat, pt.alt));
+                }
+                viewer.entities.add({
+                    name: track.name,
+                    polyline: {
+                        positions: positions,
+                        width: 3,
+                        material: color,
+                        clampToGround: false,
+                    }
+                });
+                const cssColor = color.toCssColorString();
+                legendHtml += `<div class="track-item"><span class="dot" style="background:${cssColor}"></span>${track.name} (${track.points.length} pts)</div>`;
+            });
+
+            if (IMAGES.length > 0) {
+                legendHtml += `<div class="track-item" style="margin-top:6px">📷 ${IMAGES.length} geotagged image(s)</div>`;
+            }
+            legendEl.innerHTML = legendHtml;
+
+            IMAGES.forEach((img) => {
+                viewer.entities.add({
+                    name: img.filename,
+                    position: Cesium.Cartesian3.fromDegrees(img.lon, img.lat, img.alt + 15),
+                    billboard: {
+                        image: 'thumbnails/' + encodeURIComponent(img.filename),
+                        width: 48,
+                        height: 48,
+                        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                        heightReference: Cesium.HeightReference.NONE,
+                        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                    },
+                    properties: {
+                        filename: img.filename,
+                        lat: img.lat,
+                        lon: img.lon,
+                        alt: img.alt,
+                    }
+                });
+            });
+
+            if (TRACKS.length > 0 || IMAGES.length > 0) {
+                viewer.zoomTo(viewer.entities);
+            }
+        }
+
+        // --- Selection & highlight ---
+        let selectedEntity = null;
+        let connectorEntity = null;
+        const NORMAL_SIZE = 48;
+        const SELECTED_SIZE = 56;
+
+        function highlightEntity(entity) {
+            if (selectedEntity && selectedEntity.billboard) {
+                selectedEntity.billboard.width = NORMAL_SIZE;
+                selectedEntity.billboard.height = NORMAL_SIZE;
+                selectedEntity.point = undefined;
+            }
+            if (connectorEntity) {
+                viewer.entities.remove(connectorEntity);
+                connectorEntity = null;
+            }
+            selectedEntity = entity;
+            if (entity && entity.billboard && entity.properties) {
+                entity.billboard.width = SELECTED_SIZE;
+                entity.billboard.height = SELECTED_SIZE;
+                const lat = entity.properties.lat?.getValue();
+                const lon = entity.properties.lon?.getValue();
+                const alt = entity.properties.alt?.getValue();
+                if (lat !== undefined && lon !== undefined && alt !== undefined) {
+                    const trackPos = Cesium.Cartesian3.fromDegrees(lon, lat, alt);
+                    const billboardPos = Cesium.Cartesian3.fromDegrees(lon, lat, alt + 15);
+                    connectorEntity = viewer.entities.add({
+                        polyline: {
+                            positions: [trackPos, billboardPos],
+                            width: 2,
+                            material: Cesium.Color.RED,
+                            clampToGround: false,
+                        },
+                        position: trackPos,
+                        point: {
+                            pixelSize: 10,
+                            color: Cesium.Color.RED,
+                            outlineColor: Cesium.Color.WHITE,
+                            outlineWidth: 2,
+                            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                        },
+                    });
+                }
+            }
+        }
+
+        const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+        handler.setInputAction(function(click) {
+            const picked = viewer.scene.pick(click.position);
+            if (Cesium.defined(picked) && picked.id && picked.id.properties) {
+                const props = picked.id.properties;
+                const filename = props.filename?.getValue();
+                if (filename) {
+                    showImagePanel(filename, props);
+                    highlightEntity(picked.id);
+                }
+            }
+        }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+        function showImagePanel(filename, props) {
+            const panel = document.getElementById('imagePanel');
+            const img = document.getElementById('panelImage');
+            const label = document.getElementById('panelLabel');
+            img.src = 'images/' + encodeURIComponent(filename);
+            const lat = props.lat?.getValue()?.toFixed(6) ?? '';
+            const lon = props.lon?.getValue()?.toFixed(6) ?? '';
+            const alt = props.alt?.getValue()?.toFixed(0) ?? '';
+            label.textContent = `${filename}  (${lat}, ${lon}, ${alt}m)`;
+            panel.style.display = 'block';
+        }
+
+        function closeImagePanel() {
+            const panel = document.getElementById('imagePanel');
+            panel.classList.remove('fullscreen');
+            panel.style.display = 'none';
+            highlightEntity(null);
+        }
+
+        function toggleFullscreen() {
+            document.getElementById('imagePanel').classList.toggle('fullscreen');
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeImagePanel();
+        });
+
+        loadData();
+    </script>
+</body>
+</html>

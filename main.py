@@ -447,6 +447,54 @@ def main():
         serve(input_dir, port=port, image_mode="fullscreen" if fullscreen else "panel")
         return
 
+    # Check for 'export' subcommand
+    if args and args[0] == "export":
+        from exporter import export, preview
+
+        export_args = args[1:]
+        do_preview = "--preview" in export_args
+        export_args = [a for a in export_args if a != "--preview"]
+        # Parse --output option
+        out_dir = None
+        remaining = []
+        i = 0
+        while i < len(export_args):
+            if export_args[i] == "--output" and i + 1 < len(export_args):
+                out_dir = Path(export_args[i + 1])
+                i += 2
+            elif export_args[i].startswith("--"):
+                i += 1
+            else:
+                remaining.append(export_args[i])
+                i += 1
+
+        if remaining:
+            input_dir = Path(remaining[0])
+        else:
+            input_dir = select_directory(
+                title="Select folder containing tracks and geotagged/ subfolder"
+            )
+
+        if input_dir is None:
+            print("No directory selected. Exiting.")
+            return
+        if not input_dir.is_dir():
+            print(f"Not a directory: {input_dir}")
+            return
+        if input_dir.name == "geotagged":
+            input_dir = input_dir.parent
+            print(f"  (Using parent directory: {input_dir})")
+
+        if out_dir is None:
+            out_dir = input_dir / "export"
+
+        print(f"\nExporting static site from: {input_dir}")
+        export(input_dir, out_dir)
+
+        if do_preview:
+            preview(out_dir)
+        return
+
     # Default: geotag command
     skip_no_ts = "--skip-no-timestamp" in args
 
