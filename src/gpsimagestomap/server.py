@@ -101,7 +101,10 @@ def _read_gps_from_exif(path: Path) -> tuple[float, float, float] | None:
 
 
 def create_app(
-    input_dir: Path, image_mode: str = "panel", include_tracks: bool = True
+    input_dir: Path,
+    image_mode: str = "panel",
+    include_tracks: bool = True,
+    include_image_sequence_track: bool = True,
 ) -> Flask:
     """Create and configure the Flask app for serving the map viewer."""
     app = Flask(
@@ -167,7 +170,7 @@ def create_app(
                             }
                         )
 
-    if not include_tracks:
+    if not include_tracks and include_image_sequence_track:
         image_sequence_track = _build_image_sequence_track(image_sequence_points)
         if image_sequence_track is not None:
             tracks_data.append(image_sequence_track)
@@ -283,12 +286,18 @@ def serve(
     port: int = 5000,
     image_mode: str = "panel",
     include_tracks: bool = True,
+    include_image_sequence_track: bool = True,
 ) -> None:
     """Start the Flask server and open the browser."""
     # Load .env from the current working directory (project root)
     _load_dotenv(Path.cwd())
     _kill_port(port)
-    app = create_app(input_dir, image_mode=image_mode, include_tracks=include_tracks)
+    app = create_app(
+        input_dir,
+        image_mode=image_mode,
+        include_tracks=include_tracks,
+        include_image_sequence_track=include_image_sequence_track,
+    )
     token = os.environ.get("CESIUM_ION_TOKEN", "")
     if not token:
         print("\n  NOTE: Set CESIUM_ION_TOKEN environment variable for 3D terrain.")

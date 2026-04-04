@@ -83,6 +83,7 @@ uv run gpsimagestomap serve
 | `serve --port N` | Set the server port (default: 5000) |
 | `serve --fullscreen` | Open images in fullscreen mode by default |
 | `show` | Display GPS-tagged images on the map (no tracks needed) |
+| `show --no-sequence-line` | In show mode, hide the thin gray line that connects images in timestamp order |
 | `export` | Export a self-contained static site |
 | `export --output DIR` | Set the export output directory (default: `<input>/export/`) |
 | `export --preview` | Start a local static preview server after export (default port: 8000) |
@@ -104,6 +105,12 @@ Display images that already have GPS coordinates in their EXIF on the 3D map —
 ```
 uv run gpsimagestomap show path/to/photos
 uv run gpsimagestomap show
+```
+
+Disable the temporal connecting line in show mode:
+
+```
+uv run gpsimagestomap show path/to/photos --no-sequence-line
 ```
 
 Images without GPS tags are listed but skipped. HEIC/HEIF files are automatically converted to JPEG for browser compatibility.

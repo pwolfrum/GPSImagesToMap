@@ -16,12 +16,12 @@ from .track_parser import Track, TrackPoint
 _PIEXIF_FORMATS = {".jpg", ".jpeg"}
 
 
-def interpolate_position(track: Track, time: datetime) -> TrackPoint:
+def interpolate_position(track: Track, time: datetime) -> TrackPoint | None:
     """Interpolate lat/lon/alt on a track for a given timestamp.
 
     Uses linear interpolation between the two nearest track points.
     If the time falls exactly on a point, returns that point.
-    If before/after the track, clamps to the first/last point.
+    Returns None if the time falls outside the track's time range.
     """
     times = [p.time for p in track.points]
 
@@ -31,13 +31,9 @@ def interpolate_position(track: Track, time: datetime) -> TrackPoint:
     elif times[0].tzinfo is None and time.tzinfo is not None:
         time = time.replace(tzinfo=None)
 
-    # Handle edge cases
-    if time <= times[0]:
-        p = track.points[0]
-        return TrackPoint(time=time, lat=p.lat, lon=p.lon, alt=p.alt)
-    if time >= times[-1]:
-        p = track.points[-1]
-        return TrackPoint(time=time, lat=p.lat, lon=p.lon, alt=p.alt)
+    # Outside track range → cannot interpolate
+    if time < times[0] or time > times[-1]:
+        return None
 
     # Find insertion point
     idx = bisect.bisect_left(times, time)

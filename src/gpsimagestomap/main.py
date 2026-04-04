@@ -44,7 +44,7 @@ def discover_tracks(directory: Path) -> list[Track]:
 def match_images_to_tracks(
     tracks: list[Track],
     images: list[ImageInfo],
-    tolerance: timedelta = timedelta(hours=1),
+    tolerance: timedelta = timedelta(0),
 ) -> list[tuple[Track, list[ImageInfo]]]:
     """Match images with timestamps to tracks whose time range covers them.
 
@@ -122,10 +122,15 @@ def detect_timezone_correction(
     from -12 to +12 and suggest whichever shift places the most images
     within a track.
 
+    Images with GPS tags are excluded — their clocks are NTP-synced and
+    should not be corrected.
+
     Returns the suggested timedelta correction, or None if no correction needed.
     """
     uncertain = [
-        img for img in images if img.timestamp is not None and not img.tz_certain
+        img
+        for img in images
+        if img.timestamp is not None and not img.tz_certain and not img.has_gps
     ]
     if not uncertain:
         return None
@@ -184,7 +189,9 @@ def handle_timezone_uncertainty(
     Returns the (potentially corrected) image list.
     """
     uncertain = [
-        img for img in images if img.timestamp is not None and not img.tz_certain
+        img
+        for img in images
+        if img.timestamp is not None and not img.tz_certain and not img.has_gps
     ]
     if not uncertain:
         return images
@@ -255,10 +262,10 @@ def handle_timezone_uncertainty(
     if not apply:
         return images
 
-    # Apply correction to uncertain images
+    # Apply correction to uncertain images (skip GPS-tagged)
     corrected_images = []
     for img in images:
-        if img.timestamp is not None and not img.tz_certain:
+        if img.timestamp is not None and not img.tz_certain and not img.has_gps:
             corrected_images.append(
                 ImageInfo(
                     path=img.path,
@@ -376,8 +383,30 @@ def geotag(
     total_tagged = 0
     for track, imgs in matches:
         for img in imgs:
-            point = interpolate_position(track, img.timestamp)
             out_path = output_dir / img.path.name
+
+            if img.has_gps:
+                # GPS-tagged: copy as-is, preserving original coordinates
+                if img.path.suffix.lower() in (".heic", ".heif"):
+                    jpg_path = out_path.with_suffix(".jpg")
+                    pil_img = Image.open(img.path)
+                    exif_data = pil_img.info.get("exif", b"")
+                    pil_img.convert("RGB").save(
+                        jpg_path, "JPEG", quality=95, exif=exif_data
+                    )
+                    saved = jpg_path
+                else:
+                    shutil.copy2(img.path, out_path)
+                    saved = out_path
+                total_tagged += 1
+                print(f"  {img.path.name} → {saved.name} (GPS preserved)")
+                continue
+
+            point = interpolate_position(track, img.timestamp)
+            if point is None:
+                print(f"  {img.path.name}: timestamp outside track range, skipping")
+                continue
+
             if img.path.suffix.lower() in (".jpg", ".jpeg"):
                 # JPEG: copy then write EXIF in-place
                 shutil.copy2(img.path, out_path)
@@ -523,7 +552,9 @@ def main():
         show_args = args[1:]
         port = 5000
         fullscreen = "--fullscreen" in show_args
+        show_sequence_line = "--no-sequence-line" not in show_args
         show_args = [a for a in show_args if a != "--fullscreen"]
+        show_args = [a for a in show_args if a != "--no-sequence-line"]
         remaining = []
         i = 0
         while i < len(show_args):
@@ -553,6 +584,9 @@ def main():
         if not _prepare_gps_images(input_dir):
             return
 
+        if not show_sequence_line:
+            print("  Image sequence line disabled (--no-sequence-line).")
+
         if not fullscreen:
             choice = (
                 input("Image display: [p]anel (resizable, default) or [f]ullscreen? ")
@@ -567,6 +601,7 @@ def main():
             port=port,
             image_mode="fullscreen" if fullscreen else "panel",
             include_tracks=False,
+            include_image_sequence_track=show_sequence_line,
         )
         return
 

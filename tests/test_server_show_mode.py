@@ -85,3 +85,37 @@ def test_show_mode_exposes_virtual_image_sequence_track(tmp_path: Path) -> None:
     assert points[0]["time"] < points[1]["time"]
     assert points[0]["lat"] == 48.1
     assert points[1]["lat"] == 48.2
+
+
+def test_show_mode_can_disable_virtual_image_sequence_track(tmp_path: Path) -> None:
+    trip_dir = tmp_path / "trip"
+    geotagged_dir = trip_dir / "geotagged"
+    geotagged_dir.mkdir(parents=True)
+
+    _write_jpeg_with_timestamp_and_gps(
+        geotagged_dir / "a.jpg",
+        "2024:01:01 12:00:00",
+        lat=48.1,
+        lon=11.1,
+        alt=1100,
+    )
+    _write_jpeg_with_timestamp_and_gps(
+        geotagged_dir / "b.jpg",
+        "2024:01:01 12:10:00",
+        lat=48.2,
+        lon=11.2,
+        alt=1200,
+    )
+
+    app = create_app(
+        trip_dir,
+        include_tracks=False,
+        include_image_sequence_track=False,
+    )
+    client = app.test_client()
+
+    resp = client.get("/api/tracks")
+    assert resp.status_code == 200
+
+    tracks = json.loads(resp.data)
+    assert tracks == []
