@@ -10,7 +10,7 @@ from pillow_heif import register_heif_opener
 
 register_heif_opener()
 
-from track_parser import Track, TrackPoint
+from .track_parser import Track, TrackPoint
 
 # Formats that piexif can handle natively
 _PIEXIF_FORMATS = {".jpg", ".jpeg"}

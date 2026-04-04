@@ -13,9 +13,9 @@ from pillow_heif import register_heif_opener
 
 register_heif_opener()
 
-from image_discovery import IMAGE_EXTENSIONS
-from server import _load_dotenv, _read_gps_from_exif
-from track_parser import TRACK_EXTENSIONS, parse_track_file
+from .image_discovery import IMAGE_EXTENSIONS
+from .server import _load_dotenv, _read_gps_from_exif
+from .track_parser import TRACK_EXTENSIONS, parse_track_file
 
 THUMBNAIL_SIZE = (200, 200)
 
@@ -29,7 +29,7 @@ def export(input_dir: Path, output_dir: Path) -> None:
             images/          – full-size geotagged images
             thumbnails/      – 200×200 JPEG thumbnails
     """
-    _load_dotenv(Path(__file__).parent)
+    _load_dotenv(Path.cwd())
 
     geotagged_dir = input_dir / "geotagged"
     if not geotagged_dir.is_dir():

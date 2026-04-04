@@ -11,9 +11,9 @@ from pillow_heif import register_heif_opener
 
 register_heif_opener()
 
-from geotagger import interpolate_position, write_gps_exif
-from image_discovery import ImageInfo, discover_images
-from track_parser import TRACK_EXTENSIONS, Track, parse_track_file
+from .geotagger import interpolate_position, write_gps_exif
+from .image_discovery import ImageInfo, discover_images
+from .track_parser import TRACK_EXTENSIONS, Track, parse_track_file
 
 
 def select_directory(
@@ -465,7 +465,7 @@ def main():
 
     # Check for 'serve' subcommand
     if args and args[0] == "serve":
-        from server import serve
+        from .server import serve
 
         serve_args = args[1:]
         port = 5000
@@ -518,7 +518,7 @@ def main():
 
     # Check for 'show' subcommand — display GPS-tagged images without tracks
     if args and args[0] == "show":
-        from server import serve
+        from .server import serve
 
         show_args = args[1:]
         port = 5000
@@ -572,7 +572,7 @@ def main():
 
     # Check for 'export' subcommand
     if args and args[0] == "export":
-        from exporter import export, preview
+        from .exporter import export, preview
 
         export_args = args[1:]
         do_preview = "--preview" in export_args
@@ -648,7 +648,7 @@ def main():
         return
 
     if geotag(input_dir, skip_no_timestamp=skip_no_ts, time_offset_minutes=time_offset):
-        from server import serve
+        from .server import serve
 
         print("\nLaunching 3D viewer...")
         choice = (

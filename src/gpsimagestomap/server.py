@@ -12,8 +12,8 @@ from pillow_heif import register_heif_opener
 
 register_heif_opener()
 
-from image_discovery import IMAGE_EXTENSIONS
-from track_parser import TRACK_EXTENSIONS, parse_track_file
+from .image_discovery import IMAGE_EXTENSIONS
+from .track_parser import TRACK_EXTENSIONS, parse_track_file
 
 THUMBNAIL_SIZE = (200, 200)
 
@@ -247,8 +247,8 @@ def serve(
     include_tracks: bool = True,
 ) -> None:
     """Start the Flask server and open the browser."""
-    # Load .env from project root (where server.py lives)
-    _load_dotenv(Path(__file__).parent)
+    # Load .env from the current working directory (project root)
+    _load_dotenv(Path.cwd())
     _kill_port(port)
     app = create_app(input_dir, image_mode=image_mode, include_tracks=include_tracks)
     token = os.environ.get("CESIUM_ION_TOKEN", "")
