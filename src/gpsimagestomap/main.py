@@ -13,6 +13,7 @@ register_heif_opener()
 
 from .geotagger import interpolate_position, write_gps_exif
 from .image_discovery import ImageInfo, discover_images
+from .storage import get_dataset_images_dir
 from .track_parser import TRACK_EXTENSIONS, Track, parse_track_file
 
 
@@ -366,8 +367,8 @@ def geotag(
 
     # 6. Geotag
     print("\nGeotagging...")
-    output_dir = input_dir / "geotagged"
-    output_dir.mkdir(exist_ok=True)
+    output_dir = get_dataset_images_dir(input_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Remove stale files from previous run to avoid Windows file-lock issues
     for old in output_dir.iterdir():
@@ -426,7 +427,7 @@ def geotag(
 def _prepare_gps_images(input_dir: Path) -> bool:
     """Find GPS-tagged images and prepare them for the viewer.
 
-    Copies images with valid GPS coordinates to the geotagged/ subfolder
+    Copies images with valid GPS coordinates to the app-managed work folder
     (converting HEIC to JPEG as needed). Returns True if any images were found.
     """
     print(f"\nScanning for GPS-tagged images: {input_dir}\n")
@@ -453,9 +454,9 @@ def _prepare_gps_images(input_dir: Path) -> bool:
         print("\nNo images with GPS coordinates found. Nothing to display.")
         return False
 
-    # Copy GPS-tagged images to geotagged/ (converting HEIC→JPEG as needed)
-    output_dir = input_dir / "geotagged"
-    output_dir.mkdir(exist_ok=True)
+    # Copy GPS-tagged images to the app work directory (converting HEIC→JPEG as needed)
+    output_dir = get_dataset_images_dir(input_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Clean stale files from previous run
     for old in output_dir.iterdir():
@@ -517,7 +518,7 @@ def main():
             input_dir = Path(remaining[0])
         else:
             input_dir = select_directory(
-                title="Select folder containing tracks and geotagged/ subfolder"
+                title="Select folder containing tracks and photos"
             )
 
         if input_dir is None:
@@ -526,11 +527,6 @@ def main():
         if not input_dir.is_dir():
             print(f"Not a directory: {input_dir}")
             return
-
-        # If user selected the geotagged folder itself, use its parent
-        if input_dir.name == "geotagged":
-            input_dir = input_dir.parent
-            print(f"  (Using parent directory: {input_dir})")
 
         # Ask image display mode if not set via flag
         if not fullscreen:
@@ -630,7 +626,7 @@ def main():
             input_dir = Path(remaining[0])
         else:
             input_dir = select_directory(
-                title="Select folder containing tracks and geotagged/ subfolder"
+                title="Select folder containing tracks and photos"
             )
 
         if input_dir is None:
@@ -639,10 +635,6 @@ def main():
         if not input_dir.is_dir():
             print(f"Not a directory: {input_dir}")
             return
-        if input_dir.name == "geotagged":
-            input_dir = input_dir.parent
-            print(f"  (Using parent directory: {input_dir})")
-
         if out_dir is None:
             out_dir = input_dir / "export"
 

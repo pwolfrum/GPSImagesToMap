@@ -15,6 +15,7 @@ register_heif_opener()
 
 from .image_discovery import IMAGE_EXTENSIONS
 from .server import _load_dotenv, _read_gps_from_exif
+from .storage import get_dataset_images_dir
 from .track_parser import TRACK_EXTENSIONS, parse_track_file
 
 THUMBNAIL_SIZE = (200, 200)
@@ -31,9 +32,9 @@ def export(input_dir: Path, output_dir: Path) -> None:
     """
     _load_dotenv(Path.cwd())
 
-    geotagged_dir = input_dir / "geotagged"
+    geotagged_dir = get_dataset_images_dir(input_dir)
     if not geotagged_dir.is_dir():
-        print(f"  No geotagged/ folder found in {input_dir}")
+        print(f"  No generated images folder found for {input_dir}")
         print("  Run the geotagging pipeline first.")
         return
 

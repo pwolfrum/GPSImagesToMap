@@ -5,6 +5,7 @@ import piexif
 from PIL import Image
 
 from gpsimagestomap.main import geotag
+from gpsimagestomap.storage import get_dataset_images_dir
 
 
 def _write_sample_igc(path: Path) -> None:
@@ -44,7 +45,7 @@ def test_geotag_writes_output_with_gps_exif(tmp_path: Path) -> None:
 
     assert ok is True
 
-    out = trip / "geotagged" / "IMG_0001.jpg"
+    out = get_dataset_images_dir(trip) / "IMG_0001.jpg"
     assert out.is_file()
 
     exif = piexif.load(str(out))
@@ -99,7 +100,7 @@ def test_gps_tagged_image_preserves_original_coordinates(tmp_path: Path) -> None
     ok = geotag(trip, skip_no_timestamp=True)
     assert ok is True
 
-    out = trip / "geotagged" / "PHONE.jpg"
+    out = get_dataset_images_dir(trip) / "PHONE.jpg"
     assert out.is_file()
 
     exif = piexif.load(str(out))
@@ -123,4 +124,4 @@ def test_out_of_range_image_is_skipped(tmp_path: Path) -> None:
 
     # No images matched → returns False
     assert ok is False
-    assert not (trip / "geotagged" / "LATE.jpg").exists()
+    assert not (get_dataset_images_dir(trip) / "LATE.jpg").exists()

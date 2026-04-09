@@ -14,6 +14,7 @@ from pillow_heif import register_heif_opener
 register_heif_opener()
 
 from .image_discovery import IMAGE_EXTENSIONS, read_image_info
+from .storage import get_dataset_images_dir
 from .track_parser import TRACK_EXTENSIONS, parse_track_file
 
 THUMBNAIL_SIZE = (200, 200)
@@ -113,7 +114,7 @@ def create_app(
         static_folder=None,
     )
 
-    geotagged_dir = input_dir / "geotagged"
+    geotagged_dir = get_dataset_images_dir(input_dir)
     thumbnail_cache: dict[str, bytes] = {}
 
     # Pre-load track data
@@ -180,7 +181,7 @@ def create_app(
     )
     print(f"  Input dir: {input_dir}")
     print(
-        f"  Geotagged dir: {geotagged_dir} ({'exists' if geotagged_dir.is_dir() else 'NOT FOUND'})"
+        f"  Generated images dir: {geotagged_dir} ({'exists' if geotagged_dir.is_dir() else 'NOT FOUND'})"
     )
 
     @app.route("/")

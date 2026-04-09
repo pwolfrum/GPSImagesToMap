@@ -5,6 +5,7 @@ import piexif
 from PIL import Image
 
 from gpsimagestomap.server import create_app
+from gpsimagestomap.storage import get_dataset_images_dir
 
 
 def _decimal_to_dms(decimal: float):
@@ -47,7 +48,8 @@ def _write_jpeg_with_timestamp_and_gps(
 
 def test_show_mode_exposes_virtual_image_sequence_track(tmp_path: Path) -> None:
     trip_dir = tmp_path / "trip"
-    geotagged_dir = trip_dir / "geotagged"
+    trip_dir.mkdir(parents=True)
+    geotagged_dir = get_dataset_images_dir(trip_dir)
     geotagged_dir.mkdir(parents=True)
 
     # Filenames are intentionally out-of-order to verify timestamp ordering.
@@ -89,7 +91,8 @@ def test_show_mode_exposes_virtual_image_sequence_track(tmp_path: Path) -> None:
 
 def test_show_mode_can_disable_virtual_image_sequence_track(tmp_path: Path) -> None:
     trip_dir = tmp_path / "trip"
-    geotagged_dir = trip_dir / "geotagged"
+    trip_dir.mkdir(parents=True)
+    geotagged_dir = get_dataset_images_dir(trip_dir)
     geotagged_dir.mkdir(parents=True)
 
     _write_jpeg_with_timestamp_and_gps(

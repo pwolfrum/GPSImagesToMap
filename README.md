@@ -1,6 +1,7 @@
 # GPSImagesToMap
 
-Geotag photos using GPS track files (IGC/GPX), then view the results on a 3D Cesium map.
+Geotag photos using GPS track files (IGC/GPX), then view the results on a 3D Cesium map. In default mode, only photos taken during the track recording will be shown. 
+A 'show' can be used to view photos which already have GPS tags without accompanying track files.
 
 ## Setup
 
@@ -20,7 +21,7 @@ CESIUM_ION_TOKEN="your_token_here"
 
 ## Folder structure
 
-Both commands expect the same input folder — one that contains your track files and photos directly in that folder:
+All commands expect the same input folder — one that contains your track files and photos directly in that folder:
 
 ```
 my-trip/
@@ -28,12 +29,16 @@ my-trip/
   route.gpx
   IMG_001.jpg          ← photos with EXIF timestamps
   IMG_002.heic
-  geotagged/           ← created automatically by geotagging
-    IMG_001.jpg
-    IMG_002.jpg
 ```
 
-The tool only reads track files and images directly in the folder you select; it does not scan nested subfolders. The viewer reads tracks from the input folder and geotagged images from the `geotagged/` subfolder. If you accidentally select the `geotagged/` folder in the dialog, it will auto-correct to its parent.
+The tool only reads track files and images directly in the folder you select; it does not scan nested subfolders.
+
+Generated images are stored in an app-managed working directory, not inside your trip folder.
+
+- Default on Windows: `%LOCALAPPDATA%/GPSImagesToMap/work/`
+- Optional override: set `GPSIMAGES_WORK_DIR` to a custom location
+
+Within that work root, each input folder gets its own stable dataset subfolder.
 
 ## Usage
 
@@ -49,7 +54,7 @@ This will:
 1. Parse all track files in the folder
 2. Read EXIF timestamps from images (JPEG, HEIC, TIFF)
 3. Match images to tracks by time
-4. Write GPS coordinates into image EXIF → saved to `path/to/my-trip/geotagged/`
+4. Write GPS coordinates into image EXIF → saved to the app-managed work directory
 5. Launch a 3D viewer in your browser
 
 Omit the path to get a folder picker dialog:
@@ -60,7 +65,7 @@ uv run gpsimagestomap
 
 ### View only (skip geotagging)
 
-To view results from a previous run without re-geotagging, pass the **same folder** you used for geotagging (not the `geotagged/` subfolder):
+To view results from a previous run without re-geotagging, pass the same source folder you used for geotagging:
 
 ```
 uv run gpsimagestomap serve path/to/my-trip
@@ -79,12 +84,12 @@ uv run gpsimagestomap serve
 |---|---|
 | `--skip-no-timestamp` | Skip images without EXIF timestamps without prompting |
 | `--time-offset N` | Shift image timestamps by N minutes before matching (decimal allowed, e.g. `-13` or `7.5`). Only available in geotagging mode. |
-| `serve` | View-only mode (no geotagging) |
+| `serve` | View-only mode (no geotagging). Will reuse the processed images from a previous run |
 | `serve --port N` | Set the server port (default: 5000) |
 | `serve --fullscreen` | Open images in fullscreen mode by default |
-| `show` | Display GPS-tagged images on the map (no tracks needed) |
+| `show` | Display all GPS-tagged images on the map (no tracks needed). Does image format conversion if needed |
 | `show --no-sequence-line` | In show mode, hide the thin gray line that connects images in timestamp order |
-| `export` | Export a self-contained static site |
+| `export` | Export a self-contained static site, which can be hosted on the web |
 | `export --output DIR` | Set the export output directory (default: `<input>/export/`) |
 | `export --preview` | Start a local static preview server after export (default port: 8000) |
 
@@ -96,7 +101,7 @@ If photos appear at the wrong position along the track, the camera clock was lik
 uv run gpsimagestomap path/to/my-trip --time-offset -13
 ```
 
-A **negative** value shifts images earlier (camera was ahead), **positive** shifts later (camera was behind). Each run overwrites the previous `geotagged/` output, so you can quickly iterate to find the right value.
+A **negative** value shifts images earlier (camera was ahead), **positive** shifts later (camera was behind). Each run overwrites the previous generated output for that dataset, so you can quickly iterate to find the right value.
 
 ### Show GPS-tagged images (no tracks)
 
@@ -129,7 +134,7 @@ This creates an output folder (defaults to `path/to/my-trip/export/`) with:
 ```
 export/
   index.html       ← standalone Cesium viewer with inline data
-  images/          ← full-size geotagged images
+  images/          ← full-size generated images
   thumbnails/      ← 200×200 JPEG thumbnails
 ```
 
@@ -157,4 +162,4 @@ uv run gpsimagestomap export path/to/my-trip --preview
 ## Supported formats
 
 - **Tracks:** IGC, GPX
-- **Images:** JPEG, HEIC/HEIF, TIFF, PNG (all non-JPEG inputs are saved as JPEG in `geotagged/`)
+- **Images:** JPEG, HEIC/HEIF, TIFF, PNG (all non-JPEG inputs are saved as JPEG in the app-managed work directory)
