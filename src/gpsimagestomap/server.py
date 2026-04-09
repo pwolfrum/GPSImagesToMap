@@ -13,6 +13,7 @@ from pillow_heif import register_heif_opener
 
 register_heif_opener()
 
+from .app_config import load_app_env
 from .image_discovery import IMAGE_EXTENSIONS, read_image_info
 from .storage import get_dataset_images_dir
 from .track_parser import TRACK_EXTENSIONS, parse_track_file
@@ -36,26 +37,6 @@ def _build_image_sequence_track(
             "width": 1.5,
         },
     }
-
-
-def _load_dotenv(directory: Path) -> None:
-    """Load variables from a .env file into os.environ (if the file exists)."""
-    env_file = directory / ".env"
-    if not env_file.is_file():
-        return
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key = key.strip()
-        value = value.strip()
-        # Strip surrounding quotes (single or double)
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
-            value = value[1:-1]
-        os.environ.setdefault(key, value)
 
 
 def _read_gps_from_exif(path: Path) -> tuple[float, float, float] | None:
@@ -293,8 +274,7 @@ def serve(
     include_image_sequence_track: bool = True,
 ) -> None:
     """Start the Flask server and open the browser."""
-    # Load .env from the current working directory (project root)
-    _load_dotenv(Path.cwd())
+    load_app_env(Path.cwd())
     _kill_port(port)
     app = create_app(
         input_dir,
@@ -304,8 +284,9 @@ def serve(
     )
     token = os.environ.get("CESIUM_ION_TOKEN", "")
     if not token:
-        print("\n  NOTE: Set CESIUM_ION_TOKEN environment variable for 3D terrain.")
+        print("\n  NOTE: Set CESIUM_ION_TOKEN for 3D terrain.")
         print("  Get a free token at https://ion.cesium.com/tokens")
+        print("  Launcher setup saves token to per-user config .env automatically.")
         print("  Without it, the viewer will use a flat globe.\n")
 
     url = f"http://localhost:{port}"

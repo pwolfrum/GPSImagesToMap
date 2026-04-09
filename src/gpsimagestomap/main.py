@@ -171,36 +171,19 @@ def match_images_to_tracks(
 
 
 def handle_no_timestamp_images(images: list[ImageInfo]) -> None:
-    """Notify user about images without timestamps and let them decide."""
+    """Report images without timestamps and always ignore them."""
     no_ts = [img for img in images if img.timestamp is None]
     if not no_ts:
         return
 
     print(f"\n{'=' * 60}")
-    print(f"WARNING: {len(no_ts)} image(s) have NO timestamp in EXIF:")
+    print(f"IGNORED: {len(no_ts)} image(s) without EXIF timestamp:")
     for img in no_ts:
         print(f"  - {img.path.name}")
-    print("\nThese images cannot be placed on any track without a timestamp.")
-    print("Common causes: sent via messaging apps (Signal, WhatsApp),")
-    print("screenshots, or manually edited photos.")
+    print("\nThese images cannot be matched to tracks without timestamps.")
+    print("Common causes: messaging app exports, screenshots, or edited photos.")
+    print("Processing continues with timestamped images only.")
     print(f"{'=' * 60}\n")
-
-    while True:
-        choice = (
-            input("Options: [s]kip them and continue, [q]uit to provide originals: ")
-            .strip()
-            .lower()
-        )
-        if choice == "s":
-            print("Skipping images without timestamps.\n")
-            return
-        elif choice == "q":
-            print(
-                "Exiting. Please replace these images with originals that have EXIF timestamps."
-            )
-            raise SystemExit(0)
-        else:
-            print("Please enter 's' or 'q'.")
 
 
 def detect_timezone_correction(
@@ -256,7 +239,6 @@ def detect_timezone_correction(
 def handle_timezone_uncertainty(
     tracks: list[Track],
     images: list[ImageInfo],
-    skip_prompt: bool = False,
 ) -> list[ImageInfo]:
     """Check for timezone issues and let the user correct them.
 
@@ -293,28 +275,22 @@ def handle_timezone_uncertainty(
     print(f"  that is {sign}{hours}h relative to UTC.")
     print(f"{'=' * 60}\n")
 
-    if skip_prompt:
-        print(
-            f"  Auto-applying {sign}{hours}h correction (--skip-no-timestamp mode).\n"
+    while True:
+        choice = (
+            input(f"Apply {sign}{hours}h correction? [y]es / [n]o / [q]uit: ")
+            .strip()
+            .lower()
         )
-        apply = True
-    else:
-        while True:
-            choice = (
-                input(f"Apply {sign}{hours}h correction? [y]es / [n]o / [q]uit: ")
-                .strip()
-                .lower()
-            )
-            if choice == "y":
-                apply = True
-                break
-            elif choice == "n":
-                apply = False
-                break
-            elif choice == "q":
-                raise SystemExit(0)
-            else:
-                print("Please enter 'y', 'n', or 'q'.")
+        if choice == "y":
+            apply = True
+            break
+        elif choice == "n":
+            apply = False
+            break
+        elif choice == "q":
+            raise SystemExit(0)
+        else:
+            print("Please enter 'y', 'n', or 'q'.")
 
     if not apply:
         return images
@@ -338,9 +314,7 @@ def handle_timezone_uncertainty(
     return corrected_images
 
 
-def geotag(
-    input_dir: Path, skip_no_timestamp: bool = False, time_offset_minutes: float = 0
-) -> bool:
+def geotag(input_dir: Path, time_offset_minutes: float = 0) -> bool:
     """Main geotagging workflow. Returns True if images were geotagged."""
     print(f"\nScanning: {input_dir}\n")
 
@@ -366,23 +340,15 @@ def geotag(
         f"  Found {len(images)} image(s): {len(with_ts)} with timestamp, {len(without_ts)} without"
     )
 
-    # 3. Handle images without timestamps
-    if skip_no_timestamp:
-        if without_ts:
-            print(
-                f"  Skipping {len(without_ts)} image(s) without timestamps (--skip-no-timestamp)"
-            )
-    else:
-        handle_no_timestamp_images(images)
+    # 3. Always ignore images without timestamps (with clear reporting)
+    handle_no_timestamp_images(images)
 
     if not with_ts:
         print("No images with timestamps available. Nothing to geotag.")
         return False
 
     # 4. Detect and correct timezone issues for images without explicit timezone
-    with_ts = handle_timezone_uncertainty(
-        tracks, with_ts, skip_prompt=skip_no_timestamp
-    )
+    with_ts = handle_timezone_uncertainty(tracks, with_ts)
     with_ts = [img for img in with_ts if img.timestamp is not None]
 
     # 4b. Apply manual time offset (camera clock drift correction)
@@ -420,6 +386,20 @@ def geotag(
 
     for track, imgs in matches:
         print(f"  Track '{track.name}': {len(imgs)} image(s) matched")
+
+    matched_paths = {img.path for _, imgs in matches for img in imgs}
+    outside_track = [img for img in with_ts if img.path not in matched_paths]
+    if outside_track:
+        print(
+            f"\nIGNORED: {len(outside_track)} image(s) outside all track time ranges:"
+        )
+        for img in outside_track:
+            if img.timestamp is None:
+                print(f"  - {img.path.name}")
+            else:
+                print(
+                    f"  - {img.path.name} ({img.timestamp.isoformat(sep=' ', timespec='seconds')})"
+                )
 
     # 6. Geotag
     print("\nGeotagging...")
@@ -512,15 +492,168 @@ def _prepare_gps_images(input_dir: Path) -> bool:
     return True
 
 
+def _is_valid_directory(input_dir: Path | None) -> bool:
+    """Validate selected input directory and print user-facing errors."""
+    if input_dir is None:
+        print("No directory selected. Exiting.")
+        return False
+    if not input_dir.is_dir():
+        print(f"Not a directory: {input_dir}")
+        return False
+    return True
+
+
+def orchestrate_geotag_mode(
+    input_dir: Path,
+    *,
+    time_offset_minutes: float = 0,
+    port: int = 5000,
+    image_mode: str = "panel",
+) -> bool:
+    """Run geotag workflow and launch map viewer when successful."""
+    if not _is_valid_directory(input_dir):
+        return False
+
+    if geotag(
+        input_dir,
+        time_offset_minutes=time_offset_minutes,
+    ):
+        from .server import serve
+
+        print("\nLaunching 3D viewer...")
+        serve(input_dir, port=port, image_mode=image_mode)
+        return True
+
+    return False
+
+
+def orchestrate_review_mode(
+    input_dir: Path,
+    *,
+    port: int = 5000,
+    image_mode: str = "panel",
+) -> None:
+    """View previously generated trip results without re-geotagging."""
+    if not _is_valid_directory(input_dir):
+        return
+
+    from .server import serve
+
+    serve(input_dir, port=port, image_mode=image_mode)
+
+
+def orchestrate_browse_mode(
+    input_dir: Path,
+    *,
+    port: int = 5000,
+    image_mode: str = "panel",
+    include_sequence_line: bool = True,
+) -> None:
+    """Display GPS-tagged images without requiring track files."""
+    if not _is_valid_directory(input_dir):
+        return
+
+    from .server import serve
+
+    if not _prepare_gps_images(input_dir):
+        return
+
+    if not include_sequence_line:
+        print("  Image sequence line disabled (--no-sequence-line).")
+
+    serve(
+        input_dir,
+        port=port,
+        image_mode=image_mode,
+        include_tracks=False,
+        include_image_sequence_track=include_sequence_line,
+    )
+
+
+def orchestrate_export_mode(
+    input_dir: Path,
+    *,
+    output_dir: Path | None = None,
+    do_preview: bool = False,
+) -> None:
+    """Export static site artifacts and optionally launch preview server."""
+    if not _is_valid_directory(input_dir):
+        return
+
+    from .exporter import export, preview
+
+    if output_dir is None:
+        output_dir = input_dir / "export"
+
+    print(f"\nExporting static site from: {input_dir}")
+    export(input_dir, output_dir)
+
+    if do_preview:
+        preview(output_dir)
+
+
 def main():
     import sys
 
     args = sys.argv[1:]
 
+    # GUI-first launcher when no explicit CLI arguments were provided.
+    if not args:
+        try:
+            from .launcher import run_launcher
+        except ImportError as e:
+            print(f"Failed to initialize launcher GUI: {e}")
+            return
+
+        try:
+            request = run_launcher()
+        except tk.TclError as e:
+            print(f"Failed to open launcher GUI: {e}")
+            return
+
+        if request is None:
+            print("No action selected. Exiting.")
+            return
+
+        mode = request["mode"]
+        input_dir = request["input_dir"]
+
+        if mode == "geotag":
+            orchestrate_geotag_mode(
+                input_dir,
+                time_offset_minutes=request["time_offset_minutes"],
+                port=request["port"],
+                image_mode=request["image_mode"],
+            )
+            return
+
+        if mode == "review":
+            orchestrate_review_mode(
+                input_dir,
+                port=request["port"],
+                image_mode=request["image_mode"],
+            )
+            return
+
+        if mode == "browse":
+            orchestrate_browse_mode(
+                input_dir,
+                port=request["port"],
+                image_mode=request["image_mode"],
+                include_sequence_line=request["include_sequence_line"],
+            )
+            return
+
+        if mode == "export":
+            orchestrate_export_mode(
+                input_dir,
+                output_dir=request["output_dir"],
+                do_preview=request["do_preview"],
+            )
+            return
+
     # Check for 'serve' subcommand
     if args and args[0] == "serve":
-        from .server import serve
-
         port, fullscreen, _, remaining = _parse_subcommand_port_and_flags(args[1:])
 
         if remaining:
@@ -530,20 +663,18 @@ def main():
                 title="Select folder containing tracks and photos"
             )
 
-        if input_dir is None:
-            print("No directory selected. Exiting.")
-            return
-        if not input_dir.is_dir():
-            print(f"Not a directory: {input_dir}")
+        if not _is_valid_directory(input_dir):
             return
 
-        serve(input_dir, port=port, image_mode=_choose_image_mode(fullscreen))
+        orchestrate_review_mode(
+            input_dir,
+            port=port,
+            image_mode=_choose_image_mode(fullscreen),
+        )
         return
 
     # Check for 'show' subcommand — display GPS-tagged images without tracks
     if args and args[0] == "show":
-        from .server import serve
-
         port, fullscreen, extra_flags, remaining = _parse_subcommand_port_and_flags(
             args[1:], extra_flags=("--no-sequence-line",)
         )
@@ -556,32 +687,19 @@ def main():
                 title="Select folder containing GPS-tagged images"
             )
 
-        if input_dir is None:
-            print("No directory selected. Exiting.")
-            return
-        if not input_dir.is_dir():
-            print(f"Not a directory: {input_dir}")
+        if not _is_valid_directory(input_dir):
             return
 
-        if not _prepare_gps_images(input_dir):
-            return
-
-        if not show_sequence_line:
-            print("  Image sequence line disabled (--no-sequence-line).")
-
-        serve(
+        orchestrate_browse_mode(
             input_dir,
             port=port,
             image_mode=_choose_image_mode(fullscreen),
-            include_tracks=False,
-            include_image_sequence_track=show_sequence_line,
+            include_sequence_line=show_sequence_line,
         )
         return
 
     # Check for 'export' subcommand
     if args and args[0] == "export":
-        from .exporter import export, preview
-
         export_args = args[1:]
         do_preview = "--preview" in export_args
         export_args = [a for a in export_args if a != "--preview"]
@@ -606,24 +724,15 @@ def main():
                 title="Select folder containing tracks and photos"
             )
 
-        if input_dir is None:
-            print("No directory selected. Exiting.")
+        if not _is_valid_directory(input_dir):
             return
-        if not input_dir.is_dir():
-            print(f"Not a directory: {input_dir}")
-            return
-        if out_dir is None:
-            out_dir = input_dir / "export"
 
-        print(f"\nExporting static site from: {input_dir}")
-        export(input_dir, out_dir)
-
-        if do_preview:
-            preview(out_dir)
+        orchestrate_export_mode(
+            input_dir,
+            output_dir=out_dir,
+            do_preview=do_preview,
+        )
         return
-
-    # Default: geotag command
-    skip_no_ts = "--skip-no-timestamp" in args
 
     # Parse --time-offset N (minutes)
     time_offset = 0.0
@@ -643,19 +752,14 @@ def main():
     else:
         input_dir = select_directory()
 
-    if input_dir is None:
-        print("No directory selected. Exiting.")
+    if not _is_valid_directory(input_dir):
         return
 
-    if not input_dir.is_dir():
-        print(f"Not a directory: {input_dir}")
-        return
-
-    if geotag(input_dir, skip_no_timestamp=skip_no_ts, time_offset_minutes=time_offset):
-        from .server import serve
-
-        print("\nLaunching 3D viewer...")
-        serve(input_dir, image_mode=_choose_image_mode(fullscreen=False))
+    orchestrate_geotag_mode(
+        input_dir,
+        time_offset_minutes=time_offset,
+        image_mode=_choose_image_mode(fullscreen=False),
+    )
 
 
 if __name__ == "__main__":

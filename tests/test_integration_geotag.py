@@ -40,7 +40,7 @@ def test_geotag_writes_output_with_gps_exif(tmp_path: Path) -> None:
     _write_sample_igc(trip / "flight.igc")
     _write_jpeg_with_timestamp(trip / "IMG_0001.jpg", "2024:01:01 12:05:00")
 
-    ok = geotag(trip, skip_no_timestamp=True)
+    ok = geotag(trip)
 
     assert ok is True
 
@@ -96,7 +96,7 @@ def test_gps_tagged_image_preserves_original_coordinates(tmp_path: Path) -> None
         trip / "PHONE.jpg", "2024:01:01 12:05:00", lat=46.0, lon=7.0
     )
 
-    ok = geotag(trip, skip_no_timestamp=True)
+    ok = geotag(trip)
     assert ok is True
 
     out = get_dataset_images_dir(trip) / "PHONE.jpg"
@@ -119,7 +119,7 @@ def test_out_of_range_image_is_skipped(tmp_path: Path) -> None:
     # Track is 12:00-12:10 UTC on 2024-01-01; this image is on a different day
     _write_jpeg_with_timestamp(trip / "LATE.jpg", "2024:01:02 12:05:00")
 
-    ok = geotag(trip, skip_no_timestamp=True)
+    ok = geotag(trip)
 
     # No images matched → returns False
     assert ok is False

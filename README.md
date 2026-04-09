@@ -13,7 +13,10 @@ uv sync
 
 This installs the package in editable mode and registers the `gpsimagestomap` command.
 
-For 3D terrain in the viewer, create a `.env` file with a free [Cesium ion](https://ion.cesium.com/tokens) token:
+For 3D terrain in the viewer, configure a free [Cesium ion](https://ion.cesium.com/tokens) token:
+
+- Launcher users: click Setup in the GUI; the token is saved to `%LOCALAPPDATA%/GPSImagesToMap/config/.env`
+- Developer/manual workflow: you can still create a project `.env` file
 
 ```
 CESIUM_ION_TOKEN="your_token_here"
@@ -42,6 +45,23 @@ Within that work root, each input folder gets its own stable dataset subfolder.
 
 ## Usage
 
+### Launcher (recommended)
+
+Run without arguments to open the launcher GUI:
+
+```
+uv run gpsimagestomap
+```
+
+Modes in the launcher:
+
+- Geotag: Match photos to tracks and display in map.
+- Review: Show previously generated trip results (simply select original input folder for autodetection)
+- Browse: Show photos that already contain GPS tags (no tracks, but connected by temporal order).
+- Export: Build a static website package for sharing or hosting.
+
+All existing CLI commands remain available and are documented below.
+
 ### Geotag + View (default)
 
 Place track files and photos in a folder, then run:
@@ -63,6 +83,13 @@ Omit the path to get a folder picker dialog:
 uv run gpsimagestomap
 ```
 
+#### Geotag behavior notes
+
+- Images without EXIF timestamps are always ignored.
+- The console prints a clear list of ignored files without timestamps.
+- Timestamped images outside all track time ranges are also ignored.
+- The console prints a clear list of those outside-range files, including timestamps.
+
 ### View only (skip geotagging)
 
 To view results from a previous run without re-geotagging, pass the same source folder you used for geotagging:
@@ -82,7 +109,6 @@ uv run gpsimagestomap serve
 
 | Option | Description |
 |---|---|
-| `--skip-no-timestamp` | Skip images without EXIF timestamps without prompting |
 | `--time-offset N` | Shift image timestamps by N minutes before matching (decimal allowed, e.g. `-13` or `7.5`). Only available in geotagging mode. |
 | `serve` | View-only mode (no geotagging). Will reuse the processed images from a previous run |
 | `serve --port N` | Set the server port (default: 5000) |

@@ -13,8 +13,9 @@ from pillow_heif import register_heif_opener
 
 register_heif_opener()
 
+from .app_config import load_app_env
 from .image_discovery import IMAGE_EXTENSIONS
-from .server import _load_dotenv, _read_gps_from_exif
+from .server import _read_gps_from_exif
 from .storage import get_dataset_images_dir
 from .track_parser import TRACK_EXTENSIONS, parse_track_file
 
@@ -30,7 +31,7 @@ def export(input_dir: Path, output_dir: Path) -> None:
             images/          – full-size generated images
             thumbnails/      – 200×200 JPEG thumbnails
     """
-    _load_dotenv(Path.cwd())
+    load_app_env(Path.cwd())
 
     generated_images_dir = get_dataset_images_dir(input_dir)
     if not generated_images_dir.is_dir():
