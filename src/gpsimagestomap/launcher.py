@@ -12,7 +12,6 @@ TOOLTIPS = {
     "geotag": "Match photos to tracks and display in map.",
     "review": "Show previously generated trip results",
     "browse": "Show photos that already contain GPS tags, no tracks",
-    "export": "Build a static website package from previously prepared trip.",
 }
 
 MODE_HELP = {
@@ -39,14 +38,6 @@ MODE_HELP = {
         "- Port: local web port for the viewer server (default: 5000).\n"
         "- Image mode: Default size for image popups (can always be resized at runtime).\n"
         "- Draw temporal sequence line: Draw a thin line connecting photos in temporal order (e.g. to visualize the path of a trip).\n"
-    ),
-    "export": (
-        "Export mode\n"
-        "Builds a static site package (index.html + images + thumbnails) for sharing or hosting.\n"
-        "Requires previously prepared trip data from the same input folder (run Geotag first, or Browse for already GPS-tagged photos).\n\n"
-        "Options:\n"
-        "- Output folder (optional): custom destination; leave empty to use <input>/export.\n"
-        "- Preview after export: start local static preview server automatically.\n"
     ),
 }
 
@@ -113,8 +104,6 @@ def run_launcher() -> dict | None:
     image_mode_var = tk.StringVar(value="panel")
     time_offset_var = tk.StringVar(value="0")
     include_sequence_line_var = tk.BooleanVar(value=True)
-    output_dir_var = tk.StringVar(value="")
-    do_preview_var = tk.BooleanVar(value=False)
 
     root.columnconfigure(0, weight=1)
     root.rowconfigure(0, weight=1)
@@ -262,14 +251,6 @@ def run_launcher() -> dict | None:
             "Shows photos that already have GPS coordinates (e.g. taken with a phone). "
             "No track file needed. Images are connected by time order on the map."
         )
-        para(
-            "Export\n"
-            "Builds a self-contained HTML file you can share or host on the web "
-            "(e.g. GitHub Pages). Requires previously prepared geotagged images "
-            "from the same input folder (run Geotag first, or Browse for already "
-            "GPS-tagged photos). Output goes into an export subfolder by default."
-        )
-
         # ── Timing correction ────────────────────────────────────────────
         section("Correcting camera clock drift")
         para(
@@ -480,7 +461,6 @@ def run_launcher() -> dict | None:
         ("Geotag", "geotag"),
         ("Review", "review"),
         ("Browse", "browse"),
-        ("Export", "export"),
     ]
 
     for i, (label, value) in enumerate(modes):
@@ -511,11 +491,6 @@ def run_launcher() -> dict | None:
 
     options_frame = ttk.Frame(options_group)
     options_frame.pack(fill="both", expand=True)
-
-    def browse_output():
-        chosen = filedialog.askdirectory(title="Select export output folder")
-        if chosen:
-            output_dir_var.set(chosen)
 
     def render_options(*_args):
         for child in options_frame.winfo_children():
@@ -588,24 +563,6 @@ def run_launcher() -> dict | None:
             ).grid(row=row_index, column=0, columnspan=2, sticky="w", pady=4)
             row_index += 1
 
-        elif mode == "export":
-            _row(options_frame, row_index, "Output folder (optional)")
-            output_row = ttk.Frame(options_frame)
-            output_row.grid(row=row_index, column=1, sticky="ew", pady=4)
-            out_entry = ttk.Entry(output_row, textvariable=output_dir_var, width=34)
-            out_entry.pack(side="left", fill="x", expand=True)
-            ttk.Button(output_row, text="Browse...", command=browse_output).pack(
-                side="left", padx=(6, 0)
-            )
-            row_index += 1
-
-            ttk.Checkbutton(
-                options_frame,
-                text="Preview after export",
-                variable=do_preview_var,
-            ).grid(row=row_index, column=0, columnspan=2, sticky="w", pady=4)
-            row_index += 1
-
         ttk.Label(
             options_frame,
             text=MODE_HELP[mode],
@@ -674,12 +631,6 @@ def run_launcher() -> dict | None:
                 )
                 return
 
-        parsed_output_dir: Path | None = None
-        if mode == "export":
-            out_value = output_dir_var.get().strip()
-            if out_value:
-                parsed_output_dir = Path(out_value)
-
         request = {
             "mode": mode,
             "input_dir": input_dir,
@@ -687,8 +638,6 @@ def run_launcher() -> dict | None:
             "image_mode": parsed_image_mode,
             "time_offset_minutes": parsed_time_offset,
             "include_sequence_line": bool(include_sequence_line_var.get()),
-            "output_dir": parsed_output_dir,
-            "do_preview": bool(do_preview_var.get()),
         }
 
         root.destroy()

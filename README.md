@@ -10,7 +10,6 @@ Main capabilities:
 - Render tracks and photos in a Cesium 3D map viewer
 - Review previously processed trips (to save processing time)
 - Browse already geotagged photos without the need for gps tracks (e.g. for vacation pictures)
-- Export a static shareable web viewer from previously prepared trips
 
 Author: Philipp Wolfrum
 
@@ -92,7 +91,6 @@ Modes in the launcher:
 - Geotag: Match photos to tracks and display in map.
 - Review: Show previously generated trip results (simply select original input folder for autodetection)
 - Browse: Show photos that already contain GPS tags (no tracks, but connected by temporal order).
-- Export: Build a static website package from previously prepared trip (use the same input folder).
 
 All existing CLI commands remain available and are documented below.
 
@@ -151,9 +149,6 @@ uv run flightphotomapper review
 | `review --fullscreen` | Open images in fullscreen mode by default |
 | `browse` | Display all GPS-tagged images on the map (no tracks needed). Does image format conversion if needed |
 | `browse --no-sequence-line` | In browse mode, hide the thin gray line that connects images in timestamp order |
-| `export` | Export a self-contained static site from previously prepared trip (same input folder as geotag/browse) |
-| `export --output DIR` | Set the export output directory (default: `<input>/export/`) |
-| `export --preview` | Start a local static preview server after export (default port: 8000) |
 
 ### Correcting camera clock drift
 
@@ -181,51 +176,6 @@ uv run flightphotomapper browse path/to/photos --no-sequence-line
 ```
 
 Images without GPS tags are listed but skipped. HEIC/HEIF files are automatically converted to JPEG for browser compatibility.
-
-### Export static site
-
-Generate a self-contained HTML site that can be hosted anywhere (GitHub Pages, Netlify, etc.).
-
-Prerequisite: export reuses already prepared geotagged images from app storage. Run one of these first, then export using the same input folder:
-- `flightphotomapper <input-folder>` (Geotag mode)
-- `flightphotomapper browse <input-folder>` (Browse mode for photos that already contain GPS EXIF)
-
-Then run:
-
-```
-uv run flightphotomapper export path/to/my-trip
-uv run flightphotomapper export path/to/my-trip --output path/to/output
-```
-
-This creates an output folder (defaults to `path/to/my-trip/export/`) with:
-
-```
-export/
-  index.html       ← standalone Cesium viewer with inline data
-  images/          ← full-size generated images
-  thumbnails/      ← 200×200 JPEG thumbnails
-```
-
-To preview the export locally:
-
-```
-  uv run flightphotomapper export path/to/my-trip --preview
-```
-
-### Hosting on GitHub Pages
-
-1. Export the static site:
-   ```
-  uv run flightphotomapper export path/to/my-trip --output docs
-   ```
-
-2. Push the `docs/` folder to your repository.
-
-3. In your repo settings → **Pages** → set source to "Deploy from a branch", branch `main`, folder `/docs`.
-
-4. Your flight viewer will be live at `https://<user>.github.io/<repo>/`.
-
-> **Note:** The Cesium ion token is embedded in the exported HTML. Free-tier tokens have no usage limits, but avoid sharing tokens tied to paid plans.
 
 ## Supported formats
 

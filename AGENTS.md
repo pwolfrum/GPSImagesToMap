@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## Purpose
-FlightPhotoMapper geotags photos from GPS tracks (IGC/GPX) and visualizes them in a Cesium 3D viewer. It also supports view-only and static export workflows.
+FlightPhotoMapper geotags photos from GPS tracks (IGC/GPX) and visualizes them in a Cesium 3D viewer. It also supports view-only workflows.
 
 ## Runtime Overview
 - Entry point: `src/gpsimagestomap/main.py` (installed script: `flightphotomapper`)
@@ -21,8 +21,6 @@ FlightPhotoMapper geotags photos from GPS tracks (IGC/GPX) and visualizes them i
   View-only mode reusing previously prepared/generated results for the same input folder.
 - `flightphotomapper browse [INPUT_DIR] [--port N] [--fullscreen] [--no-sequence-line]`:
   Display images that already contain GPS EXIF; no tracks required.
-- `flightphotomapper export [INPUT_DIR] [--output DIR] [--preview]`:
-  Export static site with inline track/image metadata and copied image assets (requires previously prepared images for the same input folder).
 
 ## Data Model
 - `track_parser.TrackPoint`: `time`, `lat`, `lon`, `alt`
@@ -38,8 +36,6 @@ FlightPhotoMapper geotags photos from GPS tracks (IGC/GPX) and visualizes them i
   Interpolates positions and writes GPS EXIF (converts non-JPEG input to JPEG before EXIF write).
 - `server.py`:
   Flask app serving map UI, APIs, images, and generated thumbnails.
-- `exporter.py`:
-  Static-site export (`index.html`, `images/`, `thumbnails/`) and optional local preview server.
 
 ## Input/Output Conventions
 - Input scanning is non-recursive by default in main flows.
@@ -78,9 +74,8 @@ FlightPhotoMapper geotags photos from GPS tracks (IGC/GPX) and visualizes them i
 - No recursive directory scan for the primary workflows.
 - Duplicate image filenames across tracks may overwrite each other in `geotagged/`.
 - `server._kill_port` uses Windows-specific commands (`netstat`, `taskkill`).
-- Static export requires HTTP hosting for Cesium resources (opening via `file://` is insufficient).
 
 ## Suggested Extension Points
 - Add deduplication/renaming strategy for colliding output filenames.
 - Add richer CLI parsing (argparse/typer) and stronger validation.
-- Expand tests for Flask routes and export artifact content.
+- Expand tests for Flask routes.

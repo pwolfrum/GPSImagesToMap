@@ -27,8 +27,6 @@ class LauncherRequest(TypedDict):
     image_mode: str
     time_offset_minutes: float
     include_sequence_line: bool
-    output_dir: Path | None
-    do_preview: bool
 
 
 class _TeeTextStream:
@@ -154,14 +152,6 @@ def _run_gui_request(request: LauncherRequest) -> None:
             image_mode=request["image_mode"],
             include_tracks=False,
             include_image_sequence_track=request["include_sequence_line"],
-        )
-        return
-
-    if mode == "export":
-        orchestrate_export_mode(
-            input_dir,
-            output_dir=request["output_dir"],
-            do_preview=request["do_preview"],
         )
         return
 
@@ -771,28 +761,6 @@ def orchestrate_browse_mode(
     )
 
 
-def orchestrate_export_mode(
-    input_dir: Path,
-    *,
-    output_dir: Path | None = None,
-    do_preview: bool = False,
-) -> None:
-    """Export static site artifacts from previously prepared images and optionally launch preview server."""
-    if not _is_valid_directory(input_dir):
-        return
-
-    from .exporter import export, preview
-
-    if output_dir is None:
-        output_dir = input_dir / "export"
-
-    print(f"\nExporting static site from: {input_dir}")
-    export(input_dir, output_dir)
-
-    if do_preview:
-        preview(output_dir)
-
-
 def main():
     import sys
 
@@ -872,42 +840,6 @@ def main():
             port=port,
             image_mode=_choose_image_mode(fullscreen),
             include_sequence_line=include_sequence_line,
-        )
-        return
-
-    # Check for 'export' subcommand
-    if subcommand == "export":
-        export_args = args[1:]
-        do_preview = "--preview" in export_args
-        export_args = [a for a in export_args if a != "--preview"]
-        # Parse --output option
-        out_dir = None
-        remaining = []
-        i = 0
-        while i < len(export_args):
-            if export_args[i] == "--output" and i + 1 < len(export_args):
-                out_dir = Path(export_args[i + 1])
-                i += 2
-            elif export_args[i].startswith("--"):
-                i += 1
-            else:
-                remaining.append(export_args[i])
-                i += 1
-
-        if remaining:
-            input_dir = Path(remaining[0])
-        else:
-            input_dir = select_directory(
-                title="Select original input folder used for geotag/browse"
-            )
-
-        if not _is_valid_directory(input_dir):
-            return
-
-        orchestrate_export_mode(
-            input_dir,
-            output_dir=out_dir,
-            do_preview=do_preview,
         )
         return
 

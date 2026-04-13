@@ -28,7 +28,6 @@ If Windows SmartScreen appears:
 - **Geotag**: Match photos to tracks and write GPS EXIF.
 - **Review**: Re-open previously processed trip results.
 - **Browse**: Show already GPS-tagged photos (no track needed).
-- **Export**: Create a static shareable web viewer from previously prepared trip (same input folder as geotag/browse).
 
 ### Input Folder Requirements
 Put track files and photos directly in one folder (non-recursive scan), for example:
