@@ -40,6 +40,7 @@ For further documentation, see
 - `README.md` for complete CLI options and advanced usage.
 
 ---
+
 ## Publishing Checklist
 1. Build with `scripts\build_exe.bat`.
 2. Zip the full `dist\flightphotomapper\` folder.
