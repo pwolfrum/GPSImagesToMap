@@ -110,7 +110,10 @@ def _run_gui_request(request: LauncherRequest) -> None:
             input_dir,
             processing_func=geotag,
             processing_args=(input_dir,),
-            processing_kwargs={"time_offset_minutes": request["time_offset_minutes"]},
+            processing_kwargs={
+                "time_offset_minutes": request["time_offset_minutes"],
+                "force_gui_prompts": True,
+            },
             port=request["port"],
             image_mode=request["image_mode"],
         )
@@ -182,8 +185,16 @@ def _ask_timezone_correction_gui(
     - None when user cancels
     """
     sign = "+" if hours > 0 else ""
-    root = tk.Tk()
-    root.withdraw()
+    root = getattr(tk, "_default_root", None)
+    owns_root = False
+
+    if root is None or not root.winfo_exists():
+        root = tk.Tk()
+        root.withdraw()
+        owns_root = True
+    else:
+        root.update_idletasks()
+
     try:
         return messagebox.askyesnocancel(
             "Timezone uncertainty detected",
@@ -194,9 +205,11 @@ def _ask_timezone_correction_gui(
                 f"Apply {sign}{hours}h correction?\n"
                 "Yes = apply, No = continue without correction, Cancel = stop."
             ),
+            parent=root,
         )
     finally:
-        root.destroy()
+        if owns_root:
+            root.destroy()
 
 
 def _align_time_for_comparison(reference_time, candidate_time):
@@ -424,6 +437,8 @@ def detect_timezone_correction(
 def handle_timezone_uncertainty(
     tracks: list[Track],
     images: list[ImageInfo],
+    *,
+    force_gui_prompt: bool = False,
 ) -> list[ImageInfo]:
     """Check for timezone issues and let the user correct them.
 
@@ -460,7 +475,7 @@ def handle_timezone_uncertainty(
     print(f"  that is {sign}{hours}h relative to UTC.")
     print(f"{'=' * 60}\n")
 
-    if _stdin_available():
+    if not force_gui_prompt and _stdin_available():
         while True:
             choice = (
                 input(f"Apply {sign}{hours}h correction? [y]es / [n]o / [q]uit: ")
@@ -505,7 +520,12 @@ def handle_timezone_uncertainty(
     return corrected_images
 
 
-def geotag(input_dir: Path, time_offset_minutes: float = 0) -> bool:
+def geotag(
+    input_dir: Path,
+    time_offset_minutes: float = 0,
+    *,
+    force_gui_prompts: bool = False,
+) -> bool:
     """Main geotagging workflow. Returns True if images were geotagged."""
     print(f"\nScanning: {input_dir}\n")
 
@@ -539,7 +559,11 @@ def geotag(input_dir: Path, time_offset_minutes: float = 0) -> bool:
         return False
 
     # 4. Detect and correct timezone issues for images without explicit timezone
-    with_ts = handle_timezone_uncertainty(tracks, with_ts)
+    with_ts = handle_timezone_uncertainty(
+        tracks,
+        with_ts,
+        force_gui_prompt=force_gui_prompts,
+    )
     with_ts = [img for img in with_ts if img.timestamp is not None]
 
     # 4b. Apply manual time offset (camera clock drift correction)
