@@ -9,6 +9,7 @@ from datetime import timezone
 from io import BytesIO
 from pathlib import Path
 from tkinter import scrolledtext, ttk
+from typing import Callable
 
 from flask import Flask, Response, abort, send_file
 from PIL import Image, ImageOps
@@ -23,6 +24,55 @@ from .storage import get_dataset_images_dir
 from .track_parser import TRACK_EXTENSIONS, parse_track_file
 
 THUMBNAIL_SIZE = (200, 200)
+
+_ACTIVE_SERVER_LOCK = threading.Lock()
+_ACTIVE_HTTPD = None
+_ACTIVE_SERVER_THREAD: threading.Thread | None = None
+_ACTIVE_SERVER_PORT: int | None = None
+
+
+def _position_window_shifted_right(
+    root: tk.Tk | tk.Toplevel, width: int, height: int
+) -> None:
+    """Position a window slightly to the right of center to avoid launcher overlap."""
+    screen_w = root.winfo_screenwidth()
+    screen_h = root.winfo_screenheight()
+
+    base_x = (screen_w - width) // 2
+    base_y = (screen_h - height) // 2
+
+    x = min(max(20, base_x + 220), max(20, screen_w - width - 20))
+    y = min(max(20, base_y - 30), max(20, screen_h - height - 20))
+    root.geometry(f"{width}x{height}+{x}+{y}")
+
+
+def _create_window(
+    owner_root: tk.Tk | None,
+    title: str,
+    width: int = 760,
+    height: int = 500,
+) -> tk.Tk | tk.Toplevel:
+    """Create a launcher-owned child window when possible, else a root window."""
+    if owner_root is not None and owner_root.winfo_exists():
+        window = tk.Toplevel(owner_root)
+        window.transient(owner_root)
+    else:
+        window = tk.Tk()
+    window.title(title)
+    _position_window_shifted_right(window, width, height)
+    return window
+
+
+def _bring_window_to_front(root: tk.Tk | tk.Toplevel) -> None:
+    """Best-effort raise/focus for Tk windows."""
+    try:
+        root.update_idletasks()
+        root.lift()
+        root.attributes("-topmost", True)
+        root.after(200, lambda: root.attributes("-topmost", False))
+        root.after(220, root.focus_force)
+    except tk.TclError:
+        pass
 
 
 def _open_url(url: str) -> None:
@@ -93,7 +143,7 @@ def _read_gps_from_exif(path: Path) -> tuple[float, float, float] | None:
                 alt = -alt
 
         return (lat, lon, alt)
-    except (KeyError, IndexError, ZeroDivisionError):
+    except KeyError, IndexError, ZeroDivisionError:
         return None
 
 
@@ -244,6 +294,9 @@ def _kill_port(port: int) -> None:
     """Kill any process currently listening on the given port (Windows)."""
     import subprocess
 
+    if os.name != "nt":
+        return
+
     create_no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     startupinfo = None
     if hasattr(subprocess, "STARTUPINFO") and hasattr(
@@ -280,7 +333,7 @@ def _kill_port(port: int) -> None:
                 continue
             try:
                 pid = int(parts[4])
-            except (ValueError, IndexError):
+            except ValueError, IndexError:
                 continue
             if pid == 0 or pid in killed:
                 continue
@@ -291,64 +344,65 @@ def _kill_port(port: int) -> None:
         pass
 
 
-def _show_viewer_control_window(url: str, stop_server, session_log: str) -> None:
-    """Show a small control window for GUI-launched viewer sessions."""
-    root = tk.Tk()
-    root.title("FlightPhotoMapper Viewer")
-    root.geometry("760x500")
-    root.minsize(520, 320)
-    root.update_idletasks()
-    root.lift()
-    # Temporarily force topmost to reliably appear above the browser window.
-    root.attributes("-topmost", True)
-    root.after(200, lambda: root.attributes("-topmost", False))
-    root.after(220, root.focus_force)
+def _stop_server_instance(httpd, server_thread: threading.Thread | None) -> None:
+    """Stop a specific managed server instance."""
+    if httpd is None:
+        return
 
-    container = ttk.Frame(root, padding=12)
-    container.pack(fill="both", expand=True)
+    try:
+        httpd.shutdown()
+    except Exception:
+        pass
 
-    ttk.Label(
-        container,
-        text="Viewer is running",
-        font=("Segoe UI", 12, "bold"),
-    ).pack(anchor="w")
-    ttk.Label(
-        container,
-        text=(
-            f"Map URL: {url}\n"
-            "You can leave the browser open. Close this window to stop the local server and exit the application."
-        ),
-        justify="left",
-        wraplength=700,
-    ).pack(anchor="w", pady=(6, 10))
+    try:
+        httpd.server_close()
+    except Exception:
+        pass
 
-    log_box = scrolledtext.ScrolledText(container, wrap="word", height=18)
-    log_box.pack(fill="both", expand=True)
-    log_box.insert("1.0", session_log.strip() or "Viewer started.")
-    log_box.configure(state="disabled")
+    if server_thread is not None:
+        try:
+            server_thread.join(timeout=2)
+        except Exception:
+            pass
 
-    button_row = ttk.Frame(container)
-    button_row.pack(fill="x", pady=(10, 0))
 
-    stopped = False
+def stop_active_server() -> None:
+    """Stop the currently active in-process viewer server, if any."""
+    global _ACTIVE_HTTPD, _ACTIVE_SERVER_THREAD, _ACTIVE_SERVER_PORT
 
-    def stop_and_close() -> None:
-        nonlocal stopped
-        if stopped:
-            return
-        stopped = True
-        stop_server()
-        root.destroy()
+    with _ACTIVE_SERVER_LOCK:
+        httpd = _ACTIVE_HTTPD
+        server_thread = _ACTIVE_SERVER_THREAD
+        _ACTIVE_HTTPD = None
+        _ACTIVE_SERVER_THREAD = None
+        _ACTIVE_SERVER_PORT = None
 
-    ttk.Button(button_row, text="Open map again", command=lambda: _open_url(url)).pack(
-        side="left"
-    )
-    ttk.Button(button_row, text="Stop viewer", command=stop_and_close).pack(
-        side="right"
-    )
+    _stop_server_instance(httpd, server_thread)
 
-    root.protocol("WM_DELETE_WINDOW", stop_and_close)
-    root.mainloop()
+
+def _start_managed_server(app: Flask, port: int) -> tuple[object, threading.Thread]:
+    """Start a managed in-process server, replacing any previous session."""
+    global _ACTIVE_HTTPD, _ACTIVE_SERVER_THREAD, _ACTIVE_SERVER_PORT
+
+    # Replace the previous in-process server first to avoid self-kill via taskkill.
+    stop_active_server()
+
+    try:
+        httpd = make_server("127.0.0.1", port, app, threaded=True)
+    except OSError:
+        # Fallback for stale external listeners.
+        _kill_port(port)
+        httpd = make_server("127.0.0.1", port, app, threaded=True)
+
+    server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    server_thread.start()
+
+    with _ACTIVE_SERVER_LOCK:
+        _ACTIVE_HTTPD = httpd
+        _ACTIVE_SERVER_THREAD = server_thread
+        _ACTIVE_SERVER_PORT = port
+
+    return httpd, server_thread
 
 
 def serve_with_streaming_log(
@@ -360,6 +414,8 @@ def serve_with_streaming_log(
     image_mode: str = "panel",
     include_tracks: bool = True,
     include_image_sequence_track: bool = True,
+    on_return_to_launcher: Callable[[], None] | None = None,
+    owner_root: tk.Tk | None = None,
 ) -> None:
     """Show control window immediately and stream processing output in real-time."""
     import sys
@@ -368,16 +424,10 @@ def serve_with_streaming_log(
     if processing_kwargs is None:
         processing_kwargs = {}
 
-    # Create and show the processing window immediately
-    root = tk.Tk()
-    root.title("FlightPhotoMapper - Processing")
-    root.geometry("760x500")
+    # Create and show a passive session-log window.
+    root = _create_window(owner_root, "FlightPhotoMapper Session Log")
     root.minsize(520, 320)
-    root.update_idletasks()
-    root.lift()
-    root.attributes("-topmost", True)
-    root.after(200, lambda: root.attributes("-topmost", False))
-    root.after(220, root.focus_force)
+    _bring_window_to_front(root)
 
     container = ttk.Frame(root, padding=12)
     container.pack(fill="both", expand=True)
@@ -398,18 +448,6 @@ def serve_with_streaming_log(
 
     log_box = scrolledtext.ScrolledText(container, wrap="word", height=18)
     log_box.pack(fill="both", expand=True)
-
-    button_row = ttk.Frame(container)
-    button_row.pack(fill="x", pady=(10, 0))
-
-    stop_requested = False
-
-    def request_stop() -> None:
-        nonlocal stop_requested
-        stop_requested = True
-
-    stop_button = ttk.Button(button_row, text="Cancel", command=request_stop)
-    stop_button.pack(side="right")
 
     # Prepare log writer that writes to the text box
     import io
@@ -446,6 +484,8 @@ def serve_with_streaming_log(
 
     # Run processing with real-time log capture
     processing_result = None
+    default_root_backup = getattr(tk, "_default_root", None)
+    setattr(tk, "_default_root", root)
     try:
         with redirect_stdout(log_writer):
             processing_result = processing_func(*processing_args, **processing_kwargs)
@@ -454,16 +494,17 @@ def serve_with_streaming_log(
         root.after(2000, root.destroy)
         return
     finally:
+        setattr(tk, "_default_root", default_root_backup)
         sys.stdout = stdout_backup
 
     if not processing_result:
         log_writer.write("\nProcessing failed. Closing in 2 seconds...\n")
         root.after(2000, root.destroy)
+        root.mainloop()
         return
 
     # Processing complete, now start the server and update window
     load_app_env(Path.cwd())
-    _kill_port(port)
     app = create_app(
         input_dir,
         image_mode=image_mode,
@@ -471,36 +512,31 @@ def serve_with_streaming_log(
         include_image_sequence_track=include_image_sequence_track,
     )
 
-    # Update UI to show "Viewer is running"
+    # Update UI to show viewer is running; launcher remains the primary control surface.
     status_label.configure(text="Viewer is running")
-    stop_button.pack_forget()
 
     url = f"http://localhost:{port}"
     log_writer.write(f"\n\nLaunching viewer at {url}...\n")
 
-    # Start Flask server in background thread
-    httpd = make_server("127.0.0.1", port, app, threaded=True)
-    server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
-    server_thread.start()
+    # Start Flask server in background thread, replacing any previous in-process session.
+    _start_managed_server(app, port)
 
     # Brief delay then open browser
     root.after(500, lambda: _open_url(url))
 
-    def stop_and_close() -> None:
-        httpd.shutdown()
-        httpd.server_close()
-        server_thread.join(timeout=2)
-        root.destroy()
-
-    # Replace buttons with "Open map again" and "Stop viewer"
-    open_btn = ttk.Button(
-        button_row, text="Open map again", command=lambda: _open_url(url)
+    log_writer.write(
+        "\nSession log window will close automatically. Continue via the launcher.\n"
     )
-    open_btn.pack(side="left")
-    close_btn = ttk.Button(button_row, text="Stop viewer", command=stop_and_close)
-    close_btn.pack(side="right")
 
-    root.protocol("WM_DELETE_WINDOW", stop_and_close)
+    def close_log_window() -> None:
+        root.destroy()
+        if on_return_to_launcher is not None:
+            on_return_to_launcher()
+
+    root.after(1200, close_log_window)
+
+    # Closing this passive window should not affect server lifecycle.
+    root.protocol("WM_DELETE_WINDOW", root.destroy)
     root.mainloop()
 
 
@@ -511,11 +547,12 @@ def serve(
     include_tracks: bool = True,
     include_image_sequence_track: bool = True,
     show_control_window: bool = False,
-    session_log: str = "",
+    on_return_to_launcher: Callable[[], None] | None = None,
+    owner_root: tk.Tk | None = None,
 ) -> None:
     """Start the Flask server and open the browser."""
+    _ = owner_root
     load_app_env(Path.cwd())
-    _kill_port(port)
     app = create_app(
         input_dir,
         image_mode=image_mode,
@@ -531,32 +568,14 @@ def serve(
 
     url = f"http://localhost:{port}"
     if show_control_window:
-        note_lines = [f"Starting viewer at {url}"]
-        if not token:
-            note_lines.extend(
-                [
-                    "NOTE: No Cesium token configured, so the viewer will use a flat globe.",
-                    "Use Setup in the launcher to store a token for future sessions.",
-                ]
-            )
-        combined_log = "\n\n".join(
-            part for part in [session_log.strip(), "\n".join(note_lines)] if part
-        )
-
-        httpd = make_server("127.0.0.1", port, app, threaded=True)
-        server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
-        server_thread.start()
+        _start_managed_server(app, port)
         _open_url(url)
-
-        def stop_server() -> None:
-            httpd.shutdown()
-            httpd.server_close()
-            server_thread.join(timeout=2)
-
-        _show_viewer_control_window(url, stop_server, combined_log)
+        if on_return_to_launcher is not None:
+            on_return_to_launcher()
         return
 
     print(f"  Starting viewer at {url}")
     print("  Press Ctrl+C to stop.\n")
     _open_url(url)
+    _kill_port(port)
     app.run(host="127.0.0.1", port=port, debug=False)

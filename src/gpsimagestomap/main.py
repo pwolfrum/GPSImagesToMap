@@ -7,7 +7,7 @@ from contextlib import redirect_stdout
 from datetime import timedelta, timezone
 from pathlib import Path
 from tkinter import filedialog, messagebox
-from typing import Any, TextIO, TypedDict, cast
+from typing import Any, Callable, TextIO, TypedDict
 
 from PIL import Image
 from pillow_heif import register_heif_opener
@@ -27,6 +27,47 @@ class LauncherRequest(TypedDict):
     image_mode: str
     time_offset_minutes: float
     include_sequence_line: bool
+
+
+class _LauncherSessionController:
+    """Manages persistent launcher window and orchestrates run requests.
+
+    Keeps the launcher window alive across multiple runs, handles callbacks
+    from the launcher, and coordinates state transitions (idle → processing →
+    viewing → idle again).
+    """
+
+    def __init__(self, launcher_root: tk.Tk | None):
+        self.launcher_root = launcher_root
+        self.is_processing = False
+
+    def handle_run_request(
+        self,
+        request: LauncherRequest,
+        launcher_root: tk.Tk,
+        enable_callback: Callable[[bool], None],
+    ) -> None:
+        """Process a launcher run request and manage state transitions.
+
+        Args:
+            request: The LauncherRequest from the launcher form.
+            launcher_root: The launcher window root.
+            enable_callback: Callback to re-enable the launcher form.
+        """
+        self.is_processing = True
+        try:
+            _run_gui_request(
+                request,
+                on_return_to_launcher=lambda: None,
+                launcher_root=launcher_root,
+            )
+        finally:
+            self.is_processing = False
+            # Re-enable the launcher form after processing completes
+            enable_callback(True)
+            # Bring launcher to front
+            launcher_root.lift()
+            launcher_root.focus()
 
 
 class _TeeTextStream:
@@ -84,18 +125,11 @@ def _capture_stdout(func, *args, **kwargs) -> tuple[Any, str]:
     return result, buffer.getvalue()
 
 
-def _gui_session_log(base_log: str, tail_lines: list[str] | None = None) -> str:
-    """Compose a readable session log for the GUI control window."""
-    sections = []
-    stripped = base_log.strip()
-    if stripped:
-        sections.append(stripped)
-    if tail_lines:
-        sections.append("\n".join(line for line in tail_lines if line))
-    return "\n\n".join(sections)
-
-
-def _run_gui_request(request: LauncherRequest) -> None:
+def _run_gui_request(
+    request: LauncherRequest,
+    on_return_to_launcher: Callable[[], None] | None = None,
+    launcher_root: tk.Tk | None = None,
+) -> None:
     """Execute a launcher request with GUI-visible status windows."""
     input_dir = request["input_dir"]
     mode = request["mode"]
@@ -116,6 +150,8 @@ def _run_gui_request(request: LauncherRequest) -> None:
             },
             port=request["port"],
             image_mode=request["image_mode"],
+            on_return_to_launcher=on_return_to_launcher,
+            owner_root=launcher_root,
         )
         return
 
@@ -130,13 +166,8 @@ def _run_gui_request(request: LauncherRequest) -> None:
             port=request["port"],
             image_mode=request["image_mode"],
             show_control_window=True,
-            session_log=_gui_session_log(
-                "",
-                [
-                    f"Reviewing generated results for {input_dir.name}.",
-                    "Close the viewer control window to stop the application.",
-                ],
-            ),
+            on_return_to_launcher=on_return_to_launcher,
+            owner_root=launcher_root,
         )
         return
 
@@ -155,6 +186,8 @@ def _run_gui_request(request: LauncherRequest) -> None:
             image_mode=request["image_mode"],
             include_tracks=False,
             include_image_sequence_track=request["include_sequence_line"],
+            on_return_to_launcher=on_return_to_launcher,
+            owner_root=launcher_root,
         )
         return
 
@@ -170,7 +203,7 @@ def _stdin_available() -> bool:
         return False
     try:
         return (not stream.closed) and stream.isatty()
-    except (AttributeError, RuntimeError, ValueError):
+    except AttributeError, RuntimeError, ValueError:
         return False
 
 
@@ -196,7 +229,7 @@ def _ask_timezone_correction_gui(
         root.update_idletasks()
 
     try:
-        return messagebox.askyesnocancel(
+        result = messagebox.askyesnocancel(
             "Timezone uncertainty detected",
             (
                 "Some images have no timezone info in EXIF.\n\n"
@@ -207,6 +240,17 @@ def _ask_timezone_correction_gui(
             ),
             parent=root,
         )
+        # Restore focus to the active processing/log window after the popup closes.
+        if root is not None and root.winfo_exists():
+            root.update_idletasks()
+            if hasattr(root, "lift"):
+                root.lift()
+            if hasattr(root, "attributes") and hasattr(root, "after"):
+                root.attributes("-topmost", True)
+                root.after(200, lambda: root.attributes("-topmost", False))
+            if hasattr(root, "after") and hasattr(root, "focus_force"):
+                root.after(220, root.focus_force)
+        return result
     finally:
         if owns_root:
             root.destroy()
@@ -799,16 +843,31 @@ def main():
             return
 
         try:
-            request = cast(LauncherRequest | None, run_launcher())
+            # Use callback mode: launcher stays alive
+            controller = _LauncherSessionController(
+                None
+            )  # Root will be set by launcher
+
+            def on_launcher_run(
+                request: LauncherRequest,
+                launcher_root: tk.Tk,
+                enable_callback: Callable[[bool], None],
+            ) -> None:
+                """Callback when launcher Run button is clicked."""
+                controller.launcher_root = launcher_root
+                controller.handle_run_request(request, launcher_root, enable_callback)
+
+            def on_launcher_close() -> None:
+                """Ensure background viewer server is stopped when launcher exits."""
+                from .server import stop_active_server
+
+                stop_active_server()
+
+            run_launcher(on_run=on_launcher_run, on_close=on_launcher_close)
         except tk.TclError as e:
             print(f"Failed to open launcher GUI: {e}")
             return
 
-        if request is None:
-            print("No action selected. Exiting.")
-            return
-
-        _run_gui_request(request)
         return
 
     subcommand = args[0] if args else ""

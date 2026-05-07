@@ -5,6 +5,7 @@ import tkinter as tk
 import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+from typing import Callable
 
 from .app_config import get_user_env_path, load_app_env, set_user_env_var
 
@@ -88,8 +89,24 @@ def _row(frame: tk.Widget, row: int, label_text: str) -> ttk.Label:
     return label
 
 
-def run_launcher() -> dict | None:
-    """Show launcher GUI and return a normalized run request or None."""
+def run_launcher(
+    on_run: Callable[[dict, tk.Tk, Callable[[bool], None]], None] | None = None,
+    on_close: Callable[[], None] | None = None,
+) -> dict | None:
+    """Show launcher GUI and optionally return a request via callback.
+
+    If on_run callback is provided, it will be called with the request dict
+    each time the user clicks Run, and the launcher window will remain open.
+    If on_run is None, the function returns once (legacy behavior).
+
+    Args:
+        on_run: Optional callable(request) to handle Run requests without
+                closing the launcher window.
+
+    Returns:
+        None if on_run is provided (callback-based mode);
+        otherwise returns the request dict or None if user cancelled.
+    """
     root = tk.Tk()
     root.title("FlightPhotoMapper Launcher")
     root.geometry("640x520")
@@ -482,9 +499,8 @@ def run_launcher() -> dict | None:
         if chosen:
             input_dir_var.set(chosen)
 
-    ttk.Button(input_group, text="Browse...", command=browse_input).grid(
-        row=0, column=1, sticky="e"
-    )
+    browse_button = ttk.Button(input_group, text="Browse...", command=browse_input)
+    browse_button.grid(row=0, column=1, sticky="e")
 
     options_group = ttk.LabelFrame(container, text="Options", padding=10)
     options_group.pack(fill="both", expand=True)
@@ -578,6 +594,8 @@ def run_launcher() -> dict | None:
     button_row.pack(fill="x", pady=(10, 0))
 
     def cancel():
+        if on_close is not None:
+            on_close()
         root.destroy()
 
     def run():
@@ -640,10 +658,22 @@ def run_launcher() -> dict | None:
             "include_sequence_line": bool(include_sequence_line_var.get()),
         }
 
-        root.destroy()
+        if on_run is None:
+            # Legacy mode: destroy window and return
+            root.destroy()
+        else:
+            # Callback mode: launcher remains interactive; callback controls flow.
+            on_run(
+                request,
+                launcher_root=root,
+                enable_callback=lambda _enabled: None,
+            )
 
-    ttk.Button(button_row, text="Cancel", command=cancel).pack(side="right")
-    ttk.Button(button_row, text="Run", command=run).pack(side="right", padx=(0, 8))
+    cancel_button = ttk.Button(button_row, text="Cancel", command=cancel)
+    cancel_button.pack(side="right")
+    run_button = ttk.Button(button_row, text="Run", command=run)
+    run_button.pack(side="right", padx=(0, 8))
 
+    root.protocol("WM_DELETE_WINDOW", cancel)
     root.mainloop()
-    return request
+    return request if on_run is None else None

@@ -203,3 +203,40 @@ def test_run_gui_request_browse_disables_sequence_line(monkeypatch, tmp_path):
     assert captured["input_dir"] == tmp_path
     assert captured["include_tracks"] is False
     assert captured["include_image_sequence_track"] is False
+
+
+def test_run_gui_request_geotag_passes_return_callback(monkeypatch, tmp_path):
+    captured: dict = {}
+    returned = {"called": False}
+
+    monkeypatch.setattr("gpsimagestomap.main._is_valid_directory", lambda path: True)
+
+    def fake_geotag(input_dir, time_offset_minutes=0, force_gui_prompts=False):
+        return True
+
+    monkeypatch.setattr("gpsimagestomap.main.geotag", fake_geotag)
+
+    import gpsimagestomap.server as server
+
+    def fake_stream_log(input_dir, processing_func, **kwargs):
+        captured.update(kwargs)
+        cb = kwargs.get("on_return_to_launcher")
+        if cb is not None:
+            cb()
+
+    monkeypatch.setattr(server, "serve_with_streaming_log", fake_stream_log)
+
+    _run_gui_request(
+        {
+            "mode": "geotag",
+            "input_dir": tmp_path,
+            "port": 5000,
+            "image_mode": "panel",
+            "time_offset_minutes": 0.0,
+            "include_sequence_line": True,
+        },
+        on_return_to_launcher=lambda: returned.__setitem__("called", True),
+    )
+
+    assert "on_return_to_launcher" in captured
+    assert returned["called"] is True
