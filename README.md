@@ -177,6 +177,21 @@ uv run flightphotomapper browse path/to/photos --no-sequence-line
 
 Images without GPS tags are listed but skipped. HEIC/HEIF files are automatically converted to JPEG for browser compatibility.
 
+## Linux/WSL browser notes
+
+- The viewer server runs inside Linux/WSL on `http://localhost:5000` (or your selected port).
+- In WSL2, opening `http://localhost:5000` in your Windows browser works via localhost forwarding.
+- If auto-open fails, open the URL manually in your browser.
+
+Optional WSL setup for better auto-open behavior:
+
+```bash
+sudo apt update
+sudo apt install -y wslu
+```
+
+This provides `wslview`, which helps Linux apps open URLs in the Windows default browser.
+
 ## Supported formats
 
 - **Tracks:** IGC, GPX

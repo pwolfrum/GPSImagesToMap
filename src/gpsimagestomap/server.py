@@ -2,6 +2,7 @@
 
 import json
 import os
+import subprocess
 import threading
 import tkinter as tk
 import webbrowser
@@ -76,14 +77,51 @@ def _bring_window_to_front(root: tk.Tk | tk.Toplevel) -> None:
 
 
 def _open_url(url: str) -> None:
-    """Open a URL with minimal UI artifacts on Windows."""
+    """Open a URL in the default browser across Windows/Linux/WSL."""
+
+    def _is_wsl() -> bool:
+        if "WSL_DISTRO_NAME" in os.environ:
+            return True
+        try:
+            release = Path("/proc/sys/kernel/osrelease").read_text(encoding="utf-8")
+        except OSError:
+            return False
+        return "microsoft" in release.lower()
+
     if os.name == "nt":
         try:
             os.startfile(url)
             return
         except OSError:
             pass
-    webbrowser.open(url)
+
+    if _is_wsl():
+        # Prefer wslview when available; fall back to Windows PowerShell.
+        launchers = [
+            ["wslview", url],
+            ["powershell.exe", "-NoProfile", "-Command", "Start-Process", url],
+            ["cmd.exe", "/C", "start", "", url],
+        ]
+        for command in launchers:
+            try:
+                result = subprocess.run(
+                    command,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                if result.returncode == 0:
+                    return
+            except OSError:
+                continue
+
+    try:
+        if webbrowser.open(url):
+            return
+    except webbrowser.Error:
+        pass
+
+    print(f"  Could not open browser automatically. Open manually: {url}")
 
 
 def _build_image_sequence_track(
