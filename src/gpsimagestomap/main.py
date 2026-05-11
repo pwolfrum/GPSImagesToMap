@@ -1,6 +1,7 @@
 """FlightPhotoMapper — Geotag images using GPS track files, then visualize on a 3D map."""
 
 import io
+import os
 import shutil
 import tkinter as tk
 from contextlib import redirect_stdout
@@ -11,8 +12,19 @@ from typing import Any, Callable, TextIO, TypedDict
 
 from PIL import Image
 from pillow_heif import register_heif_opener
+from .app_config import load_app_env
 
 register_heif_opener()
+
+# Load .env values from per-user config and current working dir so
+# GPSIMAGES_DEBUG_TZ can be toggled from .env files.
+load_app_env(Path.cwd())
+
+DEBUG_TZ = os.getenv("GPSIMAGES_DEBUG_TZ", "0").lower() in {"1", "true", "yes"}
+
+def _debug_log(message: str) -> None:
+    if DEBUG_TZ:
+        print(message)
 
 from .geotagger import interpolate_position, write_gps_exif
 from .image_discovery import ImageInfo, discover_images
@@ -203,7 +215,7 @@ def _stdin_available() -> bool:
         return False
     try:
         return (not stream.closed) and stream.isatty()
-    except AttributeError, RuntimeError, ValueError:
+    except (AttributeError, RuntimeError, ValueError):
         return False
 
 
@@ -467,7 +479,8 @@ def detect_timezone_correction(
             continue
         offset = timedelta(hours=hours)
         count = _count_images_in_tracks(tracks, uncertain, offset)
-        if count > best_count:
+        current_best_hours = best_offset.total_seconds() / 3600
+        if count > best_count or (count == best_count and abs(hours) < abs(current_best_hours)):
             best_count = count
             best_offset = offset
 
@@ -495,6 +508,20 @@ def handle_timezone_uncertainty(
     ]
     if not uncertain:
         return images
+
+    if DEBUG_TZ:
+        _debug_log("\nDEBUG: Timezone correction candidate analysis:")
+        for img in images:
+            if img.timestamp is None:
+                status = "no timestamp"
+            elif img.has_gps:
+                status = "has GPS (excluded)"
+            elif img.tz_certain:
+                status = "tz certain (excluded)"
+            else:
+                status = "candidate"
+            _debug_log(f"  {img.path.name}: {status}")
+        _debug_log("")
 
     correction = detect_timezone_correction(tracks, images)
     if correction is None:
@@ -602,15 +629,7 @@ def geotag(
         print("No images with timestamps available. Nothing to geotag.")
         return False
 
-    # 4. Detect and correct timezone issues for images without explicit timezone
-    with_ts = handle_timezone_uncertainty(
-        tracks,
-        with_ts,
-        force_gui_prompt=force_gui_prompts,
-    )
-    with_ts = [img for img in with_ts if img.timestamp is not None]
-
-    # 4b. Apply manual time offset (camera clock drift correction)
+    # 4. Apply manual time offset (camera clock drift correction)
     #     Only applied to images WITHOUT original GPS tags (camera images).
     #     Images with GPS (e.g. from phones) have NTP-synced clocks.
     if time_offset_minutes != 0:
@@ -634,6 +653,14 @@ def geotag(
             )
             for img in no_gps
         ]
+
+    # 5. Detect and correct timezone issues for images without explicit timezone
+    with_ts = handle_timezone_uncertainty(
+        tracks,
+        with_ts,
+        force_gui_prompt=force_gui_prompts,
+    )
+    with_ts = [img for img in with_ts if img.timestamp is not None]
 
     # 5. Match images to tracks
     print("Matching images to tracks...")
