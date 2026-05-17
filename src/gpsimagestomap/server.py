@@ -173,15 +173,26 @@ def _read_gps_from_exif(path: Path) -> tuple[float, float, float] | None:
         lat = dms_to_decimal(lat_dms, lat_ref)
         lon = dms_to_decimal(lon_dms, lon_ref)
 
+        def _normalize_rational(value):
+            if isinstance(value, (list, tuple)) and len(value) == 1:
+                return _normalize_rational(value[0])
+            return value
+
         alt = 0.0
         if piexif.GPSIFD.GPSAltitude in gps:
-            alt_rational = gps[piexif.GPSIFD.GPSAltitude]
-            alt = alt_rational[0] / alt_rational[1]
-            if gps.get(piexif.GPSIFD.GPSAltitudeRef, 0) == 1:
-                alt = -alt
+            alt_rational = _normalize_rational(gps[piexif.GPSIFD.GPSAltitude])
+            if (
+                isinstance(alt_rational, (list, tuple))
+                and len(alt_rational) == 2
+                and all(isinstance(x, int) for x in alt_rational)
+                and alt_rational[1] != 0
+            ):
+                alt = alt_rational[0] / alt_rational[1]
+                if gps.get(piexif.GPSIFD.GPSAltitudeRef, 0) == 1:
+                    alt = -alt
 
         return (lat, lon, alt)
-    except KeyError, IndexError, ZeroDivisionError:
+    except (KeyError, IndexError, ZeroDivisionError):
         return None
 
 

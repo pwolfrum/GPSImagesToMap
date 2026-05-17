@@ -5,7 +5,11 @@ import pytest
 from PIL import Image
 import piexif
 
-from gpsimagestomap.geotagger import interpolate_position, write_gps_exif
+from gpsimagestomap.geotagger import (
+    interpolate_position,
+    write_gps_exif,
+    sanitize_exif_for_piexif,
+)
 from gpsimagestomap.track_parser import Track, TrackPoint
 
 
@@ -102,3 +106,27 @@ def test_write_gps_exif_handles_missing_exif_tag(tmp_path) -> None:
     assert piexif.GPSIFD.GPSLatitude in exif_data["GPS"]
     assert piexif.GPSIFD.GPSLongitude in exif_data["GPS"]
     assert piexif.GPSIFD.GPSAltitude in exif_data["GPS"]
+
+
+def test_sanitize_preserves_simple_rational_tuple() -> None:
+    exif = {"0th": {}, "Exif": {}, "GPS": {piexif.GPSIFD.GPSAltitude: (100, 100)}, "1st": {}}
+    sanitized = sanitize_exif_for_piexif(exif)
+    assert sanitized["GPS"][piexif.GPSIFD.GPSAltitude] == (100, 100)
+
+
+def test_sanitize_exif_debug_logs(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("GPSIMAGES_DEBUG_EXIF", "1")
+    exif = {"0th": {}, "Exif": {41729: 1}, "GPS": {}, "1st": {}}
+
+    sanitize_exif_for_piexif(exif)
+
+    captured = capsys.readouterr()
+    assert "EXIF sanitization actions:" in captured.out
+    assert "Converted Undefined tag 41729 in Exif from int to bytes" in captured.out
+
+
+def test_sanitize_converts_int_scene_type_to_bytes() -> None:
+    exif = {"0th": {}, "Exif": {41729: 1}, "GPS": {}, "1st": {}}
+    sanitized = sanitize_exif_for_piexif(exif)
+    val = sanitized["Exif"].get(41729)
+    assert isinstance(val, (bytes, bytearray))

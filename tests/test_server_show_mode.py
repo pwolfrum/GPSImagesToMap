@@ -46,6 +46,38 @@ def _write_jpeg_with_timestamp_and_gps(
     img.save(path, "JPEG", exif=piexif.dump(exif_dict))
 
 
+def _write_jpeg_with_nested_altitude_tuple(path: Path, dt: str, lat: float, lon: float, alt: float) -> None:
+    gps_ifd = {
+        piexif.GPSIFD.GPSLatitudeRef: b"N" if lat >= 0 else b"S",
+        piexif.GPSIFD.GPSLatitude: _decimal_to_dms(lat),
+        piexif.GPSIFD.GPSLongitudeRef: b"E" if lon >= 0 else b"W",
+        piexif.GPSIFD.GPSLongitude: _decimal_to_dms(lon),
+        piexif.GPSIFD.GPSAltitudeRef: 0 if alt >= 0 else 1,
+        piexif.GPSIFD.GPSAltitude: ((int(abs(alt) * 100), 100),),
+    }
+
+    exif_dict = {
+        "0th": {},
+        "Exif": {piexif.ExifIFD.DateTimeOriginal: dt},
+        "GPS": gps_ifd,
+        "1st": {},
+        "thumbnail": None,
+    }
+
+    img = Image.new("RGB", (8, 8), (0, 255, 0))
+    img.save(path, "JPEG", exif=piexif.dump(exif_dict))
+
+
+def test_read_gps_from_exif_handles_nested_altitude_tuple(tmp_path: Path) -> None:
+    from gpsimagestomap.server import _read_gps_from_exif
+
+    path = tmp_path / "nested.jpg"
+    _write_jpeg_with_nested_altitude_tuple(path, "2024:01:01 12:00:00", lat=48.0, lon=11.0, alt=100.0)
+
+    result = _read_gps_from_exif(path)
+    assert result == (48.0, 11.0, 100.0)
+
+
 def test_show_mode_exposes_virtual_image_sequence_track(tmp_path: Path) -> None:
     trip_dir = tmp_path / "trip"
     trip_dir.mkdir(parents=True)
