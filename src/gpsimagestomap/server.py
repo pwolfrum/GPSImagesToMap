@@ -462,10 +462,17 @@ def serve_with_streaming_log(
     if processing_kwargs is None:
         processing_kwargs = {}
 
-    # Create and show a passive session-log window.
-    root = _create_window(owner_root, "FlightPhotoMapper Session Log")
-    root.minsize(520, 320)
-    _bring_window_to_front(root)
+    # Create and show a passive session-log window before any processing starts.
+    try:
+        root = _create_window(owner_root, "FlightPhotoMapper Session Log")
+        root.minsize(520, 320)
+        _bring_window_to_front(root)
+        root.update()
+    except tk.TclError as e:
+        print("\nERROR: Could not open the FlightPhotoMapper session window.")
+        print("  The app will report status and errors to the terminal instead.")
+        print(f"  Tkinter error: {e}\n")
+        raise
 
     container = ttk.Frame(root, padding=12)
     container.pack(fill="both", expand=True)
