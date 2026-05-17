@@ -125,6 +125,10 @@ def write_gps_exif(
     }
 
     exif_dict["GPS"] = gps_ifd
+    exif_ifd = exif_dict.setdefault("Exif", {})
+    exif_tag_value = exif_ifd.get(41729)
+    if isinstance(exif_tag_value, int):
+        exif_ifd[41729] = bytes(exif_tag_value)
     exif_bytes = piexif.dump(exif_dict)
     piexif.insert(exif_bytes, str(save_to), str(save_to))
 
